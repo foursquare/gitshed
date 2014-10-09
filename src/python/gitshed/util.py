@@ -63,5 +63,4 @@ def can_ssh(host):
     print('Failed to ssh to {0}\ncommand: {1}\nstdout: {2}\nstderr: {3}'.format(
           host, cmd_str, stdout, stderr))
     return False
-  else:
-    return True
+  return True
