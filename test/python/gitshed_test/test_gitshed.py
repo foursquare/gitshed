@@ -14,6 +14,15 @@ from gitshed_test.helpers import temporary_test_dir, temporary_git_repo
 
 class gitshedTest(unittest.TestCase):
 
+  def test_is_valid_key(self):
+    self.assertFalse(GitShed.is_valid_key(''))
+    self.assertFalse(GitShed.is_valid_key('0'))
+    self.assertFalse(GitShed.is_valid_key('0123456789abcdef0123456789abcdef0123456'))
+    self.assertTrue( GitShed.is_valid_key('0123456789abcdef0123456789abcdef01234567'))
+    self.assertFalse(GitShed.is_valid_key('0123456789abcdef0123456789abcdef012345678'))
+    self.assertFalse(GitShed.is_valid_key('0123456789abcdefg0123456789abcdef012345'))
+    self.assertTrue( GitShed.is_valid_key('8c61f083227d5957c825defd97363c77d2122746'))
+
   def test_gitshed(self):
     file_relpath = os.path.join('foo', 'bar', 'baz')
     with temporary_git_repo({file_relpath: 'SOME FILE CONTENT'}) as repo:

@@ -5,6 +5,7 @@ from __future__ import (nested_scopes, generators, division, absolute_import, wi
 
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -48,29 +49,30 @@ class GitShed(object):
     repo = GitRepo(os.getcwd())
     try:
       with open(config_file_path, 'r') as infile:
-        try:
-          config = json.load(infile)
-          try:
-            bcfg = config['content_store']['remote']
-            host = bcfg['host']
-            root_path = bcfg['root_path']
-            root_url = bcfg['root_url']
-            timeout_secs = bcfg.get('timeout_secs', 5)
-
-            concurrency = config.get('concurrency', {})
-            content_store = RSyncedRemoteContentStore(host, root_path, root_url,
-                                                      timeout_secs,
-                                                      concurrency.get('get'),
-                                                      concurrency.get('put'))
-            exclude = config.get('exclude')
-            return cls(repo, content_store, exclude=exclude)
-          except KeyError as e:
-            raise GitShedError('Invalid content store config at {0}. Unknown key: {1}'.format(
-              config_file_path, e.args[0]))
-        except ValueError as e:
-          raise GitShedError('Invalid content store config at {0}: {1}'.format(config_file_path, e))
+        config = json.load(infile)
     except IOError:
       raise GitShedError('No config file found at {0}'.format(config_file_path))
+    except ValueError as e:
+      raise GitShedError('Invalid content store config at {0}: {1}'.format(config_file_path, e))
+
+    try:
+      bcfg = config['content_store']['remote']
+      host = bcfg['host']
+      root_path = bcfg['root_path']
+      root_url = bcfg['root_url']
+      timeout_secs = bcfg.get('timeout_secs', 5)
+      concurrency = config.get('concurrency', {})
+      exclude = config.get('exclude')
+    except KeyError as e:
+      raise GitShedError('Invalid content store config at {0}. Unknown key: {1}'.format(
+        config_file_path, e.args[0]))
+
+    content_store = RSyncedRemoteContentStore(host, root_path, root_url,
+                                              timeout_secs,
+                                              concurrency.get('get'),
+                                              concurrency.get('put'))
+    return cls(repo, content_store, exclude=exclude)
+
 
   def __init__(self, git_repo, content_store, exclude=None):
     super(GitShed, self).__init__()
@@ -109,8 +111,7 @@ class GitShed(object):
     """Prints all synced files."""
     all_symlinks = self._find_all_symlinks()
     broken_symlinks = self._find_broken_symlinks(all_symlinks)
-    valid_symlinks = list(set(all_symlinks) - set(broken_symlinks))
-    valid_symlinks.sort()
+    valid_symlinks = sorted(set(all_symlinks) - set(broken_symlinks))
     for symlink in valid_symlinks:
       out.write(symlink)
       out.write('\n')
@@ -170,7 +171,6 @@ class GitShed(object):
     keys = self._content_store.multi_put(relpaths)
 
     # Move the files into the shed.
-    # TODO: Do this in parallel? Probably not, since each operation is simple and fast.
     for key, relpath in zip(keys, relpaths):
       versioned_relpath = self._create_versioned_path(relpath, key)
       target_abspath = os.path.abspath(os.path.join(self._shed_relpath, versioned_relpath))
@@ -192,7 +192,11 @@ class GitShed(object):
         outfile.write('\n{0}\n'.format(relpath))
     self._content_store.verify_setup()
 
-  _KEY_LENGTH = 40
+  _KEY_RE = re.compile(r'^[0-9a-f]{40}$')  # Matches exactly 40 hex digits.
+
+  @classmethod
+  def is_valid_key(cls, key):
+    return cls._KEY_RE.match(key)
 
   def _create_versioned_path(self, path, key):
     """Adds a key to a path.
@@ -202,7 +206,7 @@ class GitShed(object):
     :param path: The unversioned path.
     :param key: The key to add to the path.
     """
-    if len(key) != self._KEY_LENGTH:
+    if not self.is_valid_key(key):
       raise GitShedError('Invalid version string: {0}'.format(key))
     # We prefix the file name with the key, rather than suffixing it, so that the file extension
     # is preserved. This prevents programs that interpret the extension from getting confused.
@@ -214,8 +218,8 @@ class GitShed(object):
 
     :param path: The versioned path.
     """
-    key, sep, suffix = os.path.basename(path).partition('.')
-    if not sep or len(key) != self._KEY_LENGTH:
+    key, sep, _ = os.path.basename(path).partition('.')
+    if not sep or not self.is_valid_key(key):
       raise GitShedError('No version in path {0}'.format(path))
     return key
 
