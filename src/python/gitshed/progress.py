@@ -49,12 +49,14 @@ class Progress(object):
 
     Note: Unsynchronized.
     """
-    sys.stdout.write('\r')
+    sys.stderr.write('\r')
     increments_done = int(self._completed / self._increment_size)
-    sys.stdout.write(self._bar_format.format(
+    sys.stderr.write(self._bar_format.format(
       completed=self._completed,
       dots='.' * increments_done,
       spaces=' ' * (self._num_increments - increments_done),
       pct=self.pct_complete()
     ))
-    sys.stdout.flush()
+    if self.pct_complete() == 100:
+      sys.stderr.write('\n')
+    sys.stderr.flush()
