@@ -204,3 +204,5 @@ which can help performance.
     
 This will cause git shed to use 12 threads for downloading content while syncing and 
 6 threads when uploading content while putting files under management.
+
+There's an example `.gitshed/config.json` file in this repo.
