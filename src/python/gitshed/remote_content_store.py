@@ -33,7 +33,6 @@ class RemoteContentStore(ContentStore):
     with open(target_path_tmp, 'w') as outfile:
       for chunk in response.iter_content(self.READ_SIZE_BYTES):
         outfile.write(chunk)
-      outfile.close()
 
   def raw_has(self, path):
     url = self._get_full_content_store_url(path)
@@ -45,7 +44,7 @@ class RemoteContentStore(ContentStore):
 
   def _is_ok(self, url, response):
     """Does the response represent a successful HTTP round trip?"""
-    if int(response.status_code / 100) == 2:  # Allow all 2XX responses. E.g., HEAD can return 204.
+    if 200 <= response.status_code < 300:  # Allow all 2XX responses. E.g., HEAD can return 204.
       return True
     elif response.status_code == 404:
       return False
