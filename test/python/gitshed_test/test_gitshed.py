@@ -23,6 +23,18 @@ class gitshedTest(unittest.TestCase):
     self.assertFalse(GitShed.is_valid_key('0123456789abcdefg0123456789abcdef012345'))
     self.assertTrue( GitShed.is_valid_key('8c61f083227d5957c825defd97363c77d2122746'))
 
+  def test_generate_find_command(self):
+    with temporary_git_repo({}) as repo:
+      with temporary_test_dir() as content_store_root:
+        content_store = LocalContentStore(content_store_root)
+        gitshed = GitShed(repo, content_store, exclude=['exclude_me', 'exclude_me_too'])
+        # Note that ./.git and ./.gitshed get automatically added to the excluded paths.
+        self.assertEquals(
+          'find . \( -path "./exclude_me" -o -path "./exclude_me_too" -o -path "./.git" -o -path "./.gitshed" \) '
+          '-prune -o -lname "*/.gitshed/files/*" -print',
+          gitshed._generate_find_command()
+        )
+
   def test_gitshed(self):
     file_relpath = os.path.join('foo', 'bar', 'baz')
     with temporary_git_repo({file_relpath: 'SOME FILE CONTENT'}) as repo:

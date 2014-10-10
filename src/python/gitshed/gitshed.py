@@ -174,6 +174,10 @@ class GitShed(object):
     for key, relpath in zip(keys, relpaths):
       versioned_relpath = self._create_versioned_path(relpath, key)
       target_abspath = os.path.abspath(os.path.join(self._shed_relpath, versioned_relpath))
+      if os.path.exists(target_abspath):
+        raise GitShedError("Shed path already exists: {0}. "
+                           "Delete it manually, but only if you're sure it's safe to do so.")
+
       safe_makedirs(os.path.dirname(target_abspath))
       shutil.move(relpath, target_abspath)
       # We want the symlink to be relative, so it's portable.
@@ -223,17 +227,45 @@ class GitShed(object):
       raise GitShedError('No version in path {0}'.format(path))
     return key
 
+  def _generate_find_command(self):
+    """Constructs a UNIX 'find' command line suitable for use by _find_all_symlinks.
+
+    See `man find` for further information.
+    """
+    # Only look for symlinks into the shed.
+    # E.g., -lname "*.gitshed/files/*"
+    shed_predicate  = '-lname "{shed_relpath}"'.format(shed_relpath=os.path.join('*', self._shed_relpath, '*'))
+
+    # Don't descend into the directories we've excluded. This isn't required for correctness,
+    # as presumably these directories won't contain symlinks into the shed. But it improves
+    # the performance of the find command.
+    # E.g., -path "./.pants.d" -o -path "./.pants.bootstrap"
+    exclude_strs = []
+    for ex in self._exclude:
+      exclude_strs.append('-path "./{excluded_relpath}"'.format(excluded_relpath=ex))
+    exclude_predicate = ' -o '.join(exclude_strs)
+
+    # Put it all together.
+    # E.g.,
+    #
+    # find . \( -path "./.pants.d" -o -path "./.pants.bootstrap" \) -prune -o -lname "*/.gitshed/files/*" -print
+    #
+    # Read this as: find from the cwd, prune these paths from the search tree, and print any
+    # symlinks whose targets match this pattern.
+    cmd_str = 'find . \( {prune_paths} \) -prune -o {print_paths} -print'.format(
+      prune_paths=exclude_predicate,
+      print_paths=shed_predicate)
+
+    return cmd_str
+
   def _find_all_symlinks(self):
     """Finds all symlinks in the repo that point to files in the shed.
 
     These correspond to all the files managed by gitshed.
     """
-    shed_predicate  = '-lname "{0}"'.format(os.path.join('*', self._shed_relpath, '*'))
-    exclude_strs = []
-    for ex in self._exclude:
-      exclude_strs.append('-path "./{0}"'.format(ex))
-    exclude_predicate = ' -o '.join(exclude_strs)
-    cmd_str = 'find . \( {0} \) -prune -o {1} -print'.format(exclude_predicate, shed_predicate)
+    cmd_str = self._generate_find_command()
+
+    # Actually run the cmd.
     retcode, stdout, stderr = run_cmd_str(cmd_str)
     if retcode:
       raise GitShedError('Command failed: {0}.\nstderr: {1}'.format(cmd_str, stderr))
