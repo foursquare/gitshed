@@ -1,0 +1,14 @@
+{
+  "content_store": {
+    "local": {
+      "root": "/data/local/gitshed"
+    }
+  },
+
+  "exclude": [".pants.d", ".pants.bootstrap"],
+
+  "concurrency": {
+    "get": 12,
+    "put": 6
+  }
+}

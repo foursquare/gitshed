@@ -1,0 +1,17 @@
+{
+  "content_store": {
+    "remote": {
+      "host": "mycontentstore",
+      "root_path": "/data/gitshed/myrepo",
+      "root_url": "http://mycontentstore/gitshed/myrepo/",
+      "timeout_secs": 10
+    }
+  },
+
+  "exclude": [".pants.d", ".pants.bootstrap"],
+
+  "concurrency": {
+    "get": 12,
+    "put": 6
+  }
+}
