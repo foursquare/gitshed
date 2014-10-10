@@ -10,6 +10,7 @@ import shutil
 import sys
 
 from gitshed.error import GitShedError
+from gitshed.local_content_store import LocalContentStore
 from gitshed.remote_content_store import RSyncedRemoteContentStore
 from gitshed.repo import GitRepo
 from gitshed.util import run_cmd_str, safe_makedirs
@@ -46,6 +47,13 @@ class GitShed(object):
 
     :param config_file_path: The path to the config file to read.
     """
+    class MissingConfigKeyError(GitShedError):
+      """Thrown when an expected config key is not present."""
+      def __init__(self, key_error):
+        """Wrap the specified KeyError instance."""
+        super(MissingConfigKeyError, self).__init__(
+          'Invalid content store config at {0}. Unknown key: {1}'.format(config_file_path, key_error.args[0]))
+
     repo = GitRepo(os.getcwd())
     try:
       with open(config_file_path, 'r') as infile:
@@ -56,21 +64,36 @@ class GitShed(object):
       raise GitShedError('Invalid content store config at {0}: {1}'.format(config_file_path, e))
 
     try:
-      bcfg = config['content_store']['remote']
-      host = bcfg['host']
-      root_path = bcfg['root_path']
-      root_url = bcfg['root_url']
-      timeout_secs = bcfg.get('timeout_secs', 5)
-      concurrency = config.get('concurrency', {})
       exclude = config.get('exclude')
+      concurrency = config.get('concurrency', {})
+      content_store_cfg = config['content_store']
     except KeyError as e:
-      raise GitShedError('Invalid content store config at {0}. Unknown key: {1}'.format(
-        config_file_path, e.args[0]))
+      raise MissingConfigKeyError(e)
 
-    content_store = RSyncedRemoteContentStore(host, root_path, root_url,
-                                              timeout_secs,
-                                              concurrency.get('get'),
-                                              concurrency.get('put'))
+    if 'remote' in content_store_cfg:
+      try:
+        rcfg = content_store_cfg['remote']
+        host = rcfg['host']
+        root_path = rcfg['root_path']
+        root_url = rcfg['root_url']
+        timeout_secs = rcfg.get('timeout_secs', 5)
+      except KeyError as e:
+        raise MissingConfigKeyError(e)
+      content_store = RSyncedRemoteContentStore(host, root_path, root_url,
+                                                timeout_secs,
+                                                concurrency.get('get'),
+                                                concurrency.get('put'))
+    elif 'local' in content_store_cfg:
+      try:
+        root = content_store_cfg['local']['root']
+      except KeyError as e:
+        raise MissingConfigKeyError(e)
+      content_store = LocalContentStore(root,
+                                        concurrency.get('get'),
+                                        concurrency.get('put'))
+    else:
+      raise GitShedError('No content store specified in config at {0}'.format(config_file_path))
+
     return cls(repo, content_store, exclude=exclude)
 
 
