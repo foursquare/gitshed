@@ -47,6 +47,13 @@ class GitShed(object):
 
     :param config_file_path: The path to the config file to read.
     """
+    class MissingConfigKeyError(GitShedError):
+      """Thrown when an expected config key is not present."""
+      def __init__(self, key_error):
+        """Wrap the specified KeyError instance."""
+        super(MissingConfigKeyError, self).__init__(
+          'Invalid content store config at {0}. Unknown key: {1}'.format(config_file_path, key_error.args[0]))
+
     repo = GitRepo(os.getcwd())
     try:
       with open(config_file_path, 'r') as infile:
@@ -57,30 +64,36 @@ class GitShed(object):
       raise GitShedError('Invalid content store config at {0}: {1}'.format(config_file_path, e))
 
     try:
+      exclude = config.get('exclude')
       concurrency = config.get('concurrency', {})
       content_store_cfg = config['content_store']
-      if 'remote' in content_store_cfg:
+    except KeyError as e:
+      raise MissingConfigKeyError(e)
+
+    if 'remote' in content_store_cfg:
+      try:
         rcfg = content_store_cfg['remote']
         host = rcfg['host']
         root_path = rcfg['root_path']
         root_url = rcfg['root_url']
         timeout_secs = rcfg.get('timeout_secs', 5)
-        content_store = RSyncedRemoteContentStore(host, root_path, root_url,
-                                                  timeout_secs,
-                                                  concurrency.get('get'),
-                                                  concurrency.get('put'))
-      elif 'local' in content_store_cfg:
+      except KeyError as e:
+        raise MissingConfigKeyError(e)
+      content_store = RSyncedRemoteContentStore(host, root_path, root_url,
+                                                timeout_secs,
+                                                concurrency.get('get'),
+                                                concurrency.get('put'))
+    elif 'local' in content_store_cfg:
+      try:
         root = content_store_cfg['local']['root']
-        content_store = LocalContentStore(root,
-                                          concurrency.get('get'),
-                                          concurrency.get('put'))
-      else:
-        raise GitShedError('No content store specified in config at {0}'.format(config_file_path))
+      except KeyError as e:
+        raise MissingConfigKeyError(e)
+      content_store = LocalContentStore(root,
+                                        concurrency.get('get'),
+                                        concurrency.get('put'))
+    else:
+      raise GitShedError('No content store specified in config at {0}'.format(config_file_path))
 
-      exclude = config.get('exclude')
-    except KeyError as e:
-      raise GitShedError('Invalid content store config at {0}. Unknown key: {1}'.format(
-        config_file_path, e.args[0]))
     return cls(repo, content_store, exclude=exclude)
 
 
