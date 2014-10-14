@@ -62,22 +62,32 @@ def unsynced():
 
 
 @click.command()
+@click.option('-f', '--argfile', type=click.File('r'),
+              help='Manage the paths listed in this file, one per line.')
 @click.argument('path_globs', nargs=-1)
-def manage(path_globs):
+def manage(argfile, path_globs):
   with exception_handling():
-    gb = gitshed_instance()
     paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
+    if argfile:
+      paths.extend(argfile.read().split())
+      argfile.close()
+    gb = gitshed_instance()
     gb.manage(paths)
 
 
 @click.command()
+@click.option('-f', '--argfile', type=click.File('r'),
+              help='Sync the paths listed in this file, one per line.')
 @click.argument('path_globs', nargs=-1)
-def sync(path_globs):
+def sync(argfile, path_globs):
   with exception_handling():
-    gb = gitshed_instance()
-    if not path_globs:
-      gb.sync_all()
     paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
+    if argfile:
+      paths.extend(argfile.read().split())
+      argfile.close()
+    gb = gitshed_instance()
+    if not paths:
+      gb.sync_all()
     gb.sync(paths)
 
 
