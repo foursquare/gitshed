@@ -69,7 +69,7 @@ def manage(argfile, path_globs):
   with exception_handling():
     paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
     if argfile:
-      paths.extend(argfile.read().split())
+      paths.extend(argfile.read().splitlines())
       argfile.close()
     gb = gitshed_instance()
     gb.manage(paths)
@@ -83,7 +83,7 @@ def sync(argfile, path_globs):
   with exception_handling():
     paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
     if argfile:
-      paths.extend(argfile.read().split())
+      paths.extend(argfile.read().splitlines())
       argfile.close()
     gb = gitshed_instance()
     if not paths:
