@@ -86,7 +86,7 @@ def sync(argfile, path_globs):
       paths.extend(argfile.read().splitlines())
       argfile.close()
     gb = gitshed_instance()
-    if not paths:
+    if not argfile and not path_globs:
       gb.sync_all()
     gb.sync(paths)
 
