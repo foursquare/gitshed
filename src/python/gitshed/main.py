@@ -5,6 +5,7 @@ from __future__ import (nested_scopes, generators, division, absolute_import, wi
                         print_function, unicode_literals)
 
 from contextlib import contextmanager
+from functools import update_wrapper
 import glob
 import os
 
@@ -32,6 +33,37 @@ def exception_handling():
       raise
     else:  # Delegate exception handling to click, which will suppress the stack trace.
       raise click.ClickException(str(e))
+
+
+def path_glob_args(func):
+  """A useful decorator that expands path glob options into a list of matched paths.
+
+  E.g.,
+
+  @path_glob_args
+  def func(paths):
+    ...
+
+  The decorated func will take 'argfile' and path_globs' arguments and pass the expanded paths
+  to func(). Will pass None to func if both arguments were unspecified. This allows func to
+  distinguish no arguments from arguments that evaluate to an empty list of paths.
+  """
+  @click.option('-f', '--argfile', type=click.File('r'),
+                help='Manage the paths listed in this file, one per line.')
+  @click.argument('path_globs', nargs=-1)
+  @click.pass_context
+  def path_glob_func(ctx, argfile, path_globs):
+    with exception_handling():
+      if not argfile and not path_globs:
+        paths = None
+      else:
+        paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
+        if argfile:
+          paths.extend(argfile.read().splitlines())
+          argfile.close()
+      return ctx.invoke(func, paths)
+
+  return update_wrapper(path_glob_func, func)
 
 
 # The click subcommands, all under the 'gitshed' main command.
@@ -62,33 +94,23 @@ def unsynced():
 
 
 @click.command()
-@click.option('-f', '--argfile', type=click.File('r'),
-              help='Manage the paths listed in this file, one per line.')
-@click.argument('path_globs', nargs=-1)
-def manage(argfile, path_globs):
-  with exception_handling():
-    paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
-    if argfile:
-      paths.extend(argfile.read().splitlines())
-      argfile.close()
-    gb = gitshed_instance()
-    gb.manage(paths)
+@path_glob_args
+def manage(paths):
+  if paths:
+    with exception_handling():
+      gb = gitshed_instance()
+      gb.manage(paths)
 
 
 @click.command()
-@click.option('-f', '--argfile', type=click.File('r'),
-              help='Sync the paths listed in this file, one per line.')
-@click.argument('path_globs', nargs=-1)
-def sync(argfile, path_globs):
+@path_glob_args
+def sync(paths):
   with exception_handling():
-    paths = [path for path_glob in path_globs for path in glob.glob(path_glob)]
-    if argfile:
-      paths.extend(argfile.read().splitlines())
-      argfile.close()
     gb = gitshed_instance()
-    if not argfile and not path_globs:
+    if paths is None:
       gb.sync_all()
-    gb.sync(paths)
+    elif paths:
+      gb.sync(paths)
 
 
 @click.command()
