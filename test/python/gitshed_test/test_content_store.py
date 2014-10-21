@@ -11,6 +11,7 @@ from threading import Thread
 import unittest
 
 from gitshed.content_store import ContentStore
+from gitshed.error import GitShedError
 from gitshed.local_content_store import LocalContentStore
 from gitshed.remote_content_store import RSyncedRemoteContentStore
 from gitshed.util import can_ssh, run_cmd_str
@@ -29,6 +30,18 @@ class ContentStoreTest(unittest.TestCase):
   def test_content_store_path_from_key(self):
     path = ContentStore().content_store_path_from_key('da39a3ee5e6b4b0d3255bfef95601890afd80709')
     self.assertEquals('content_store/da39a3ee5e6b4b0d3255bfef95601890afd80709', path)
+
+  def test_sha_verification(self):
+    class BrokenContentStore(ContentStore):
+      def raw_get(self, content_store_path, target_path_tmp):
+        with open(target_path_tmp, 'w') as fp:
+          fp.write('BAD CONTENT')
+
+    with temporary_test_dir() as tmpdir:
+      path = os.path.join(tmpdir, 'test')
+      with pytest.raises(GitShedError):
+        BrokenContentStore().get('0123456789012345678901234567890123456789', path)
+      self.assertFalse(os.path.exists(path))
 
   def test_local_content_store(self):
     with temporary_test_dir() as content_store_root:
