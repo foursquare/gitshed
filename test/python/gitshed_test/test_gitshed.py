@@ -72,3 +72,13 @@ class gitshedTest(unittest.TestCase):
         gitshed.sync([file_relpath])
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
+
+        # Resync.
+        gitshed.resync([file_relpath])
+        self.assertTrue(os.path.isfile(file_relpath))
+        assert_status(1, 0)
+
+        # Resync all.
+        gitshed.resync_all()
+        self.assertTrue(os.path.isfile(file_relpath))
+        assert_status(1, 0)

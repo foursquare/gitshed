@@ -114,6 +114,17 @@ def sync(paths):
 
 
 @click.command()
+@path_glob_args
+def resync(paths):
+  with exception_handling():
+    gb = gitshed_instance()
+    if paths is None:
+      gb.resync_all()
+    elif paths:
+      gb.resync(paths)
+
+
+@click.command()
 def setup():
   with exception_handling():
     gitshed_instance().verify_setup()
@@ -124,6 +135,7 @@ gitshed.add_command(synced)
 gitshed.add_command(unsynced)
 gitshed.add_command(manage)
 gitshed.add_command(sync)
+gitshed.add_command(resync)
 gitshed.add_command(setup)
 
 
