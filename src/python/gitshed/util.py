@@ -32,8 +32,11 @@ def safe_rmtree(path):
 
   :param path: The directory to remove.
   """
-  if os.path.exists(path):
-    shutil.rmtree(path, True)
+  if os.path.islink(path):
+    raise GitShedError('path must not be a symlink.')
+  if not os.path.isdir(path):
+    raise GitShedError('path must be a directory.')
+  shutil.rmtree(path, True)
 
 
 @contextmanager

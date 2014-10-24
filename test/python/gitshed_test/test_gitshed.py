@@ -43,6 +43,10 @@ class gitshedTest(unittest.TestCase):
         content_store = LocalContentStore(content_store_root)
         gitshed = GitShed(repo, content_store)
 
+        def assert_good_content():
+          with open(file_relpath, 'r') as fp:
+            self.assertEquals('SOME FILE CONTENT', fp.read())
+
         def assert_status(expected_total, expected_unsynced):
           n, b = gitshed.get_status()
           self.assertEquals(expected_total, n)
@@ -53,6 +57,10 @@ class gitshedTest(unittest.TestCase):
         sha = ContentStore.sha(file_relpath)
         bucket_relpath = os.path.join('.gitshed', 'files', 'foo', 'bar', '{0}.baz'.format(sha))
         self.assertFalse(os.path.isfile(bucket_relpath))
+
+        def corrupt_content():
+          with open(bucket_relpath, 'w') as fp:
+            fp.write('BAD CONTENT')
 
         # Put the file under gitshed management. It should become a symlink.
         gitshed.manage([file_relpath])
@@ -73,12 +81,22 @@ class gitshedTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
 
-        # Resync.
+        corrupt_content()
+
+        # Resync to repair.
         gitshed.resync([file_relpath])
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
 
-        # Resync all.
+        # Verify that content was repaired.
+        assert_good_content()
+
+        corrupt_content()
+
+        # Resync all to repair.
         gitshed.resync_all()
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
+
+        # Verify that content was repaired.
+        assert_good_content()

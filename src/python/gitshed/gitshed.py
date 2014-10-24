@@ -187,7 +187,9 @@ class GitShed(object):
     """
     for p in paths:
       if os.path.islink(p):
-        os.unlink(self._get_gitshed_path(p))
+        gitshed_path = self._get_gitshed_path(p)
+        if gitshed_path:
+          os.unlink(gitshed_path)
     self.sync(paths)
 
   def manage(self, paths):
