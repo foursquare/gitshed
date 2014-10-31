@@ -27,6 +27,18 @@ def safe_makedirs(path):
         raise
 
 
+def safe_rmtree(path):
+  """Delete a directory if it's present, or no-op otherwise.
+
+  :param path: The directory to remove.
+  """
+  if os.path.islink(path):
+    raise GitShedError('path must not be a symlink.')
+  if not os.path.isdir(path):
+    raise GitShedError('path must be a directory.')
+  shutil.rmtree(path, True)
+
+
 @contextmanager
 def temporary_dir(suffix='', prefix='gitshed.'):
   """A context yielding an empty temporary directory.

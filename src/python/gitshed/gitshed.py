@@ -13,7 +13,7 @@ from gitshed.error import GitShedError
 from gitshed.local_content_store import LocalContentStore
 from gitshed.remote_content_store import RSyncedRemoteContentStore
 from gitshed.repo import GitRepo
-from gitshed.util import run_cmd_str, safe_makedirs
+from gitshed.util import run_cmd_str, safe_makedirs, safe_rmtree
 
 
 class GitShed(object):
@@ -152,6 +152,17 @@ class GitShed(object):
     links = self._find_all_symlinks()
     self.sync(links)
 
+  def resync_all(self):
+    """Resyncs all files.
+
+    Removes the existing versions from the shed, and refetches them from the content store.
+    """
+    # Convert to an abspath first, to verify that self._shed_relpath is under the git repo as expected.
+    # This is an extra safety check in case of bugs.
+    gitshed_abspath = self._git_repo.abspath(self._shed_relpath)
+    safe_rmtree(gitshed_abspath)
+    self.sync_all()
+
   def sync(self, paths):
     """Syncs the specified files.
 
@@ -162,10 +173,24 @@ class GitShed(object):
     unsynced_paths = [p for p in paths if os.path.islink(p) and not os.path.exists(p)]
     args = []
     for path in unsynced_paths:
-      target_path = self._git_repo.relpath(os.path.join(os.path.dirname(path), os.readlink(path)))
+      target_path = self._get_gitshed_path(path)
       key = self._get_key_from_versioned_path(target_path)
       args.append((key, target_path))
     self._content_store.multi_get(args)
+
+  def resync(self, paths):
+    """Resyncs the specified files.
+
+    Removes the existing versions from the shed, and refetches them from the content store.
+
+    ":param paths: The files to resync.
+    """
+    for p in paths:
+      if os.path.islink(p):
+        gitshed_path = self._get_gitshed_path(p)
+        if gitshed_path:
+          os.unlink(gitshed_path)
+    self.sync(paths)
 
   def manage(self, paths):
     """Puts files under management by gitshed.
@@ -224,6 +249,17 @@ class GitShed(object):
   @classmethod
   def is_valid_key(cls, key):
     return cls._KEY_RE.match(key)
+
+  def _get_gitshed_path(self, path):
+    """If path is a symlink into the gitshed, returns the path it links to, relative to the repo root.
+
+    Returns None otherwise.
+    """
+    if os.path.islink(path):
+      target_path = self._git_repo.relpath(os.path.join(os.path.dirname(path), os.readlink(path)))
+      if target_path.startswith(self._shed_relpath):
+        return target_path
+    return None
 
   def _create_versioned_path(self, path, key):
     """Adds a key to a path.
@@ -312,7 +348,5 @@ class GitShed(object):
 
     :param relpath: The path to check, relative to the git repo root.
     """
-    if not os.path.islink(relpath):
-      return False
-    target_path = os.path.normpath(os.path.join(os.path.dirname(relpath), os.readlink(relpath)))
-    return target_path.startswith(self._shed_relpath)
+    return self._get_gitshed_path(relpath) is not None
+
