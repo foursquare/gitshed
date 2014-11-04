@@ -67,7 +67,7 @@ class RSyncedRemoteContentStore(RemoteContentStore):
     # to emulate that functionality ourselves.
     remote_path = os.path.join(self._remote_root_path, content_store_path)
     remote_dir = os.path.dirname(remote_path)
-    cmd_str = 'rsync -cv --rsync-path="sudo mkdir -p {0} && sudo rsync" {1} {2}:{3}'.format(
+    cmd_str = 'rsync -cv --rsync-path="sudo mkdir -p {0} && sudo rsync" "{1}" {2}:{3}'.format(
       remote_dir, src_path, self._host, remote_path)
     retcode, stdout, stderr = run_cmd_str(cmd_str)
     if retcode:
