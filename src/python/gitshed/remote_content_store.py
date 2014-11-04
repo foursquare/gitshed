@@ -24,10 +24,11 @@ class RemoteContentStore(ContentStore):
     super(RemoteContentStore, self).__init__(get_concurrency, put_concurrency)
     self._root_url = root_url
     self._timeout_secs = timeout_secs or 10
+    self._session = requests.Session()
 
   def raw_get(self, content_store_path, target_path_tmp):
     url = self._get_full_content_store_url(content_store_path)
-    response = requests.get(url, timeout=self._timeout_secs, stream=True)
+    response = self._session.get(url, timeout=self._timeout_secs, stream=True)
     if not self._is_ok(url, response):
       raise GitShedError('Resource does not exist: {0}'.format(url))
     with open(target_path_tmp, 'w') as outfile:
@@ -36,7 +37,7 @@ class RemoteContentStore(ContentStore):
 
   def raw_has(self, path):
     url = self._get_full_content_store_url(path)
-    response = requests.head(url, timeout=self._timeout_secs)
+    response = self._session.head(url, timeout=self._timeout_secs)
     return self._is_ok(url, response)
 
   def _get_full_content_store_url(self, content_store_path):
