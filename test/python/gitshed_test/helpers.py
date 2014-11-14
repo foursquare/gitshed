@@ -12,9 +12,10 @@ from gitshed.util import run_cmd_str, safe_makedirs, temporary_dir
 
 
 @contextmanager
-def temporary_test_dir(suffix=''):
+def temporary_test_dir(suffix='', cleanup=True, ignore_errors=False):
   """A context yielding a temporary directory for testing."""
-  with temporary_dir(suffix=suffix, prefix='gitshed_test.') as tmpdir:
+  with temporary_dir(suffix=suffix, prefix='gitshed_test.', cleanup=cleanup,
+                     ignore_errors=ignore_errors) as tmpdir:
     yield tmpdir
 
 

@@ -4,11 +4,10 @@ from __future__ import (nested_scopes, generators, division, absolute_import, wi
                         print_function, unicode_literals)
 
 import os
-import pytest
-import SimpleHTTPServer
-import SocketServer
-from threading import Thread
+import stat
 import unittest
+
+import pytest
 
 from gitshed.content_store import ContentStore
 from gitshed.error import GitShedError
@@ -53,23 +52,11 @@ class ContentStoreTest(unittest.TestCase):
       pytest.skip(
         'Cannot ssh to localhost. Change your machine security settings. E.g., on OS X you can '
         'temporarily check System Preferences -> Sharing -> Remote Login and run test under sudo.')
-    with temporary_test_dir() as content_store_root:
-      httpd = None
-      httpd_thread = None
-      try:
-        with cd(content_store_root):
-          httpd = SocketServer.TCPServer(('localhost', 0),
-                                         SimpleHTTPServer.SimpleHTTPRequestHandler)
-          httpd_thread = Thread(target=httpd.serve_forever)
-          httpd_thread.start()
-          root_url = 'http://{0}:{1}/'.format(*httpd.server_address)
-          content_store = RSyncedRemoteContentStore('localhost', content_store_root, root_url)
-          self._test_contentstore(content_store)
-      finally:
-        if httpd:
-          httpd.shutdown()
-        if httpd_thread:
-          httpd_thread.join()
+    # We ignore_errors because rsync may create dirs as root, which we won't be able to clean up.
+    with temporary_test_dir(ignore_errors=True) as content_store_root:
+      with cd(content_store_root):
+        content_store = RSyncedRemoteContentStore('localhost', content_store_root)
+        self._test_contentstore(content_store)
 
   def _test_contentstore(self, content_store):
     with temporary_test_dir() as file_root:
@@ -79,6 +66,10 @@ class ContentStoreTest(unittest.TestCase):
       os.makedirs(os.path.dirname(full_path))
       with open(full_path, 'w') as outfile:
         outfile.write(content)
+
+      # Make file executable.
+      os.chmod(full_path, 0755)
+      old_mode = os.stat(full_path)[stat.ST_MODE]
 
       key = ContentStore.sha(full_path)
 
@@ -96,6 +87,10 @@ class ContentStoreTest(unittest.TestCase):
       with open(full_path, 'r') as infile:
         s = infile.read()
       self.assertEqual(content, s)
+      new_mode = os.stat(full_path)[stat.ST_MODE]
+
+      # Verify that file permissions are preserved.
+      self.assertEqual(old_mode, new_mode)
 
       # Test that the verify_setup() functionality works. It's pretty similar to the logic above,
       # but we still want to exercise this code path.
