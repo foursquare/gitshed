@@ -3,7 +3,9 @@
 from __future__ import (nested_scopes, generators, division, absolute_import, with_statement,
                         print_function, unicode_literals)
 
+from contextlib import contextmanager
 import os
+import stat
 import unittest
 
 from gitshed.content_store import ContentStore
@@ -12,7 +14,32 @@ from gitshed.gitshed import GitShed
 from gitshed_test.helpers import temporary_test_dir, temporary_git_repo
 
 
+@contextmanager
+def umask(new_umask):
+  old_umask = os.umask(new_umask)
+  yield
+  os.umask(old_umask)
+
+
 class gitshedTest(unittest.TestCase):
+
+  def test_make_read_only(self):
+    with temporary_test_dir() as test_dir:
+      path = os.path.join(test_dir, 'file')
+      with umask(0):
+        with os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0777), 'w') as outfile:
+          outfile.write('UNWRITEABLE')
+
+        mode = os.stat(path)[stat.ST_MODE]
+        self.assertTrue(mode & stat.S_IWUSR)
+        self.assertTrue(mode & stat.S_IWGRP)
+        self.assertTrue(mode & stat.S_IWOTH)
+
+        GitShed.make_read_only(path)
+        mode = os.stat(path)[stat.ST_MODE]
+        self.assertFalse(mode & stat.S_IWUSR)
+        self.assertFalse(mode & stat.S_IWGRP)
+        self.assertFalse(mode & stat.S_IWOTH)
 
   def test_is_valid_key(self):
     self.assertFalse(GitShed.is_valid_key(''))
