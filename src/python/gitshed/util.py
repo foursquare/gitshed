@@ -40,14 +40,15 @@ def safe_rmtree(path):
 
 
 @contextmanager
-def temporary_dir(suffix='', prefix='gitshed.'):
+def temporary_dir(suffix='', prefix='gitshed.', ignore_errors=False, cleanup=True):
   """A context yielding an empty temporary directory.
 
   The directory is guaranteed to exist within the context and to be cleaned up on context exit.
   """
   ret = tempfile.mkdtemp(suffix=suffix, prefix=prefix)
   yield ret
-  shutil.rmtree(ret)
+  if cleanup:
+    shutil.rmtree(ret, ignore_errors=ignore_errors)
 
 
 def run_cmd_str(cmd_str):

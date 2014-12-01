@@ -2,7 +2,6 @@ python_library(name='lib',
                sources=globs('*.py') - ['main.py'],
                dependencies=[
                  '3rdparty:click',
-                 '3rdparty:requests',
                ]
 )
 

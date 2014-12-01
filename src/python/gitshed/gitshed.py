@@ -80,8 +80,7 @@ class GitShed(object):
         timeout_secs = rcfg.get('timeout_secs', 5)
       except KeyError as e:
         raise MissingConfigKeyError(e)
-      content_store = RSyncedRemoteContentStore(host, root_path, root_url,
-                                                timeout_secs,
+      content_store = RSyncedRemoteContentStore(host, root_path,
                                                 concurrency.get('get'),
                                                 concurrency.get('put'))
     elif 'local' in content_store_cfg:

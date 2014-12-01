@@ -160,6 +160,8 @@ class ContentStore(object):
   def has(self, key):
     """Checks for the existence of content in this content store.
 
+    Used only for testing/setup verification.
+
     :param key: Check for content under this key.
     """
     return self.raw_has(self.content_store_path_from_key(key))
