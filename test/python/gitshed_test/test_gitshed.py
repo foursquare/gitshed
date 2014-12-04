@@ -11,6 +11,7 @@ import unittest
 from gitshed.content_store import ContentStore
 from gitshed.local_content_store import LocalContentStore
 from gitshed.gitshed import GitShed
+from gitshed.util import make_read_only
 from gitshed_test.helpers import temporary_test_dir, temporary_git_repo
 
 
@@ -23,23 +24,26 @@ def umask(new_umask):
 
 class gitshedTest(unittest.TestCase):
 
+  def _assert_is_read_only(self, path):
+    mode = os.stat(path)[stat.ST_MODE]
+    self.assertFalse(mode & stat.S_IWUSR)
+    self.assertFalse(mode & stat.S_IWGRP)
+    self.assertFalse(mode & stat.S_IWOTH)
+
   def test_make_read_only(self):
     with temporary_test_dir() as test_dir:
       path = os.path.join(test_dir, 'file')
       with umask(0):
         with os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0777), 'w') as outfile:
-          outfile.write('UNWRITEABLE')
+          outfile.write('FAKE CONTENT')
 
         mode = os.stat(path)[stat.ST_MODE]
         self.assertTrue(mode & stat.S_IWUSR)
         self.assertTrue(mode & stat.S_IWGRP)
         self.assertTrue(mode & stat.S_IWOTH)
 
-        GitShed.make_read_only(path)
-        mode = os.stat(path)[stat.ST_MODE]
-        self.assertFalse(mode & stat.S_IWUSR)
-        self.assertFalse(mode & stat.S_IWGRP)
-        self.assertFalse(mode & stat.S_IWOTH)
+        make_read_only(path)
+        self._assert_is_read_only(path)
 
   def test_is_valid_key(self):
     self.assertFalse(GitShed.is_valid_key(''))
@@ -86,6 +90,7 @@ class gitshedTest(unittest.TestCase):
         self.assertFalse(os.path.isfile(bucket_relpath))
 
         def corrupt_content():
+          os.chmod(bucket_relpath, 0644)
           with open(bucket_relpath, 'w') as fp:
             fp.write('BAD CONTENT')
 
@@ -97,6 +102,7 @@ class gitshedTest(unittest.TestCase):
                                                     os.readlink(file_relpath)))
         self.assertEquals(os.path.abspath(bucket_relpath), link_abspath)
         assert_status(1, 0)
+        self._assert_is_read_only(link_abspath)
 
         # Remove the symlink target.
         os.unlink(bucket_relpath)
@@ -107,6 +113,7 @@ class gitshedTest(unittest.TestCase):
         gitshed.sync([file_relpath])
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
+        self._assert_is_read_only(link_abspath)
 
         corrupt_content()
 
@@ -114,6 +121,7 @@ class gitshedTest(unittest.TestCase):
         gitshed.resync([file_relpath])
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
+        self._assert_is_read_only(link_abspath)
 
         # Verify that content was repaired.
         assert_good_content()
@@ -124,6 +132,7 @@ class gitshedTest(unittest.TestCase):
         gitshed.resync_all()
         self.assertTrue(os.path.isfile(file_relpath))
         assert_status(1, 0)
+        self._assert_is_read_only(link_abspath)
 
         # Verify that content was repaired.
         assert_good_content()

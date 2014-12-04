@@ -89,8 +89,8 @@ class ContentStoreTest(unittest.TestCase):
       self.assertEqual(content, s)
       new_mode = os.stat(full_path)[stat.ST_MODE]
 
-      # Verify that file permissions are preserved.
-      self.assertEqual(old_mode, new_mode)
+      # Verify that file is still executable, but is read-only.
+      self.assertEqual(old_mode & ~0222, new_mode)
 
       # Test that the verify_setup() functionality works. It's pretty similar to the logic above,
       # but we still want to exercise this code path.
