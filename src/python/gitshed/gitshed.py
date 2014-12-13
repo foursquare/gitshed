@@ -7,14 +7,13 @@ import json
 import os
 import re
 import shutil
-import stat
 import sys
 
 from gitshed.error import GitShedError
 from gitshed.local_content_store import LocalContentStore
 from gitshed.remote_content_store import RSyncedRemoteContentStore
 from gitshed.repo import GitRepo
-from gitshed.util import run_cmd_str, safe_makedirs, safe_rmtree
+from gitshed.util import run_cmd_str, safe_makedirs, safe_rmtree, make_read_only
 
 
 class GitShed(object):
@@ -95,12 +94,6 @@ class GitShed(object):
       raise GitShedError('No content store specified in config at {0}'.format(config_file_path))
 
     return cls(repo, content_store, exclude=exclude)
-
-
-  @staticmethod
-  def make_read_only(path):
-    mode = os.stat(path)[stat.ST_MODE]
-    os.chmod(path, mode & ~0222)
 
   def __init__(self, git_repo, content_store, exclude=None):
     super(GitShed, self).__init__()
@@ -233,9 +226,8 @@ class GitShed(object):
 
       safe_makedirs(os.path.dirname(target_abspath))
       shutil.move(relpath, target_abspath)
-      # It's important not to write through the symlink, because those changes won't be
-      # seen by git (let alone git shed). 
-      self.make_read_only(target_abspath)
+      # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
+      make_read_only(target_abspath)
       # We want the symlink to be relative, so it's portable.
       rel_link = os.path.relpath(target_abspath, os.path.abspath(os.path.dirname(relpath)))
       os.symlink(rel_link, relpath)

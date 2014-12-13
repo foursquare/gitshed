@@ -8,6 +8,7 @@ import errno
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 
@@ -37,6 +38,11 @@ def safe_rmtree(path):
   if not os.path.isdir(path):
     raise GitShedError('path must be a directory.')
   shutil.rmtree(path, True)
+
+
+def make_read_only(path):
+  mode = os.stat(path)[stat.ST_MODE]
+  os.chmod(path, mode & ~0222)
 
 
 @contextmanager

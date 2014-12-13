@@ -11,7 +11,7 @@ import uuid
 
 from gitshed.error import GitShedError
 from gitshed.progress import Progress
-from gitshed.util import safe_makedirs, temporary_dir
+from gitshed.util import safe_makedirs, temporary_dir, make_read_only
 
 
 class ContentStore(object):
@@ -114,6 +114,8 @@ class ContentStore(object):
     if key != sha:
       raise GitShedError('Content sha mismatch for {0}! Expected {1} but got {2}.'.format(
         target_path_tmp, key, sha))
+    # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
+    make_read_only(target_path_tmp)
     shutil.move(target_path_tmp, target_path)
 
   def multi_put(self, src_paths):
