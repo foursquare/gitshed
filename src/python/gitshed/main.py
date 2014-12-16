@@ -104,6 +104,15 @@ def manage(paths):
 
 @click.command()
 @path_glob_args
+def unmanage(paths):
+  if paths:
+    with exception_handling():
+      gb = gitshed_instance()
+      gb.unmanage(paths)
+
+
+@click.command()
+@path_glob_args
 def sync(paths):
   with exception_handling():
     gb = gitshed_instance()
@@ -134,6 +143,7 @@ gitshed.add_command(status)
 gitshed.add_command(synced)
 gitshed.add_command(unsynced)
 gitshed.add_command(manage)
+gitshed.add_command(unmanage)
 gitshed.add_command(sync)
 gitshed.add_command(resync)
 gitshed.add_command(setup)

@@ -44,7 +44,7 @@ class GitRepo(object):
     :rtype: str
     :raises GitShedError: If the resolved path is not under this root.
     """
-    abspath = os.path.realpath(os.path.normpath(os.path.join(self._root, os.path.expanduser(path))))
+    abspath = os.path.normpath(os.path.join(self._root, os.path.expanduser(path)))
     if not abspath.startswith(self._root):
       raise GitShedError('{0} is not under git repo root {1}'.format(abspath, self._root))
     return abspath
