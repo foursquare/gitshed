@@ -8,12 +8,13 @@ import os
 import re
 import shutil
 import sys
+from gitshed.content_store import ContentStore
 
 from gitshed.error import GitShedError
 from gitshed.local_content_store import LocalContentStore
 from gitshed.remote_content_store import RSyncedRemoteContentStore
 from gitshed.repo import GitRepo
-from gitshed.util import run_cmd_str, safe_makedirs, safe_rmtree, make_read_only
+from gitshed.util import run_cmd_str, safe_makedirs, safe_rmtree, make_read_only, make_user_writeable
 
 
 class GitShed(object):
@@ -157,7 +158,7 @@ class GitShed(object):
     """
     # Convert to an abspath first, to verify that self._shed_relpath is under the git repo as expected.
     # This is an extra safety check in case of bugs.
-    gitshed_abspath = self._git_repo.abspath(self._shed_relpath)
+    gitshed_abspath = os.path.realpath(self._git_repo.abspath(self._shed_relpath))
     safe_rmtree(gitshed_abspath)
     self.sync_all()
 
@@ -196,6 +197,7 @@ class GitShed(object):
     For each file:
       - Copies it into the shed.
       - Uploads its contents to the content store.
+      - Makes it read-only.
       - Replaces it with a symlink.
 
     :param paths: Put these files under management.
@@ -221,16 +223,49 @@ class GitShed(object):
       versioned_relpath = self._create_versioned_path(relpath, key)
       target_abspath = os.path.abspath(os.path.join(self._shed_relpath, versioned_relpath))
       if os.path.exists(target_abspath):
-        raise GitShedError("Shed path already exists: {0}. "
-                           "Delete it manually, but only if you're sure it's safe to do so.")
+        sha = ContentStore.sha(target_abspath)
+        if key != sha:
+          raise GitShedError("Shed path {0} already exists and doesn't match content hash "
+                             "of {1}. Delete it manually, but only if you're sure it's "
+                             "safe to do so.".format(target_abspath, relpath))
+      else:
+        safe_makedirs(os.path.dirname(target_abspath))
+        shutil.move(relpath, target_abspath)
 
-      safe_makedirs(os.path.dirname(target_abspath))
-      shutil.move(relpath, target_abspath)
       # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
       make_read_only(target_abspath)
       # We want the symlink to be relative, so it's portable.
       rel_link = os.path.relpath(target_abspath, os.path.abspath(os.path.dirname(relpath)))
       os.symlink(rel_link, relpath)
+
+  def unmanage(self, paths):
+    """Removes file from management by git shed.
+
+    For each file:
+      - Syncs it into the shed if necessary.
+      - Removes the symlink.
+      - Moves the file's contents from the shed to the symlink's location.
+      - Makes it writeable by the user.
+
+    This is useful, e.g., if files need to be edited and re-uploaded. Files in git shed are
+    read-only, and mustn't be edited directly, as neither git nor git shed can detect the change.
+    The workflow for such a change is:
+
+    - Unmanage the file.
+    - Edit the file in its location.
+    - Re-manage the file.
+
+    :param paths: Put these files under management.
+    """
+    self.sync(paths)
+    for path in paths:
+      relpath = self._git_repo.relpath(path)
+      target = self._get_gitshed_path(relpath)
+      # No-op if this path is not under our management.
+      if target:
+        os.unlink(relpath)
+        shutil.move(target, relpath)
+        make_user_writeable(relpath)
 
   def verify_setup(self):
     """Verifies that the repo is set up properly for gitshed use."""

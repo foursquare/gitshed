@@ -30,6 +30,10 @@ class gitshedTest(unittest.TestCase):
     self.assertFalse(mode & stat.S_IWGRP)
     self.assertFalse(mode & stat.S_IWOTH)
 
+  def _assert_is_user_writeable(self, path):
+    mode = os.stat(path)[stat.ST_MODE]
+    self.assertTrue(mode & stat.S_IWUSR)
+
   def test_make_read_only(self):
     with temporary_test_dir() as test_dir:
       path = os.path.join(test_dir, 'file')
@@ -136,3 +140,27 @@ class gitshedTest(unittest.TestCase):
 
         # Verify that content was repaired.
         assert_good_content()
+
+        # Unmanage the file.
+        gitshed.unmanage([file_relpath])
+        self.assertFalse(os.path.islink(file_relpath))
+        assert_good_content()
+        self._assert_is_user_writeable(file_relpath)
+
+        # Edit the file.
+        with open(file_relpath, 'w') as fp:
+          fp.write('SOME OTHER CONTENT')
+
+        # Re-manage the file.
+        gitshed.manage([file_relpath])
+        new_sha = ContentStore.sha(file_relpath)
+        self.assertNotEqual(new_sha, sha)
+        new_bucket_relpath = os.path.join('.gitshed', 'files', 'foo', 'bar', '{0}.baz'.format(new_sha))
+        self.assertTrue(os.path.islink(file_relpath))
+        self.assertTrue(os.path.isfile(new_bucket_relpath))
+        new_link_abspath = os.path.abspath(os.path.join(os.path.dirname(file_relpath),
+                                                        os.readlink(file_relpath)))
+        self.assertEquals(os.path.abspath(new_bucket_relpath), new_link_abspath)
+        assert_status(1, 0)
+        self._assert_is_read_only(new_link_abspath)
+

@@ -44,6 +44,10 @@ def make_read_only(path):
   mode = os.stat(path)[stat.ST_MODE]
   os.chmod(path, mode & ~0222)
 
+def make_user_writeable(path):
+  mode = os.stat(path)[stat.ST_MODE]
+  os.chmod(path, mode | 0200)
+
 
 @contextmanager
 def temporary_dir(suffix='', prefix='gitshed.', ignore_errors=False, cleanup=True):
