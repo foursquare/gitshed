@@ -37,11 +37,14 @@ class Progress(object):
   def pct_complete(self):
     return int(100 * self._completed / self._total)
 
-  def increment(self):
-    """Increment number of completed work units."""
+  def increment(self, n=1):
+    """Increment number of completed work units.
+
+    :param n: Number of times to increment.
+    """
     with self._lock:
       if self._completed < self._total:
-        self._completed += 1
+        self._completed += min(n, self._total - self._completed)
         self.update_bar()
 
   def update_bar(self):

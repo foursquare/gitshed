@@ -32,14 +32,15 @@ class ContentStoreTest(unittest.TestCase):
 
   def test_sha_verification(self):
     class BrokenContentStore(ContentStore):
-      def raw_get(self, content_store_path, target_path_tmp):
-        with open(target_path_tmp, 'w') as fp:
-          fp.write('BAD CONTENT')
+      def raw_get(self, content_store_paths, target_dir_tmp):
+        for p in content_store_paths:
+          with open(os.path.join(target_dir_tmp, os.path.basename(p)), 'w') as fp:
+            fp.write('BAD CONTENT')
 
     with temporary_test_dir() as tmpdir:
       path = os.path.join(tmpdir, 'test')
       with pytest.raises(GitShedError):
-        BrokenContentStore().get('0123456789012345678901234567890123456789', path)
+        BrokenContentStore().get({'0123456789012345678901234567890123456789': [path]})
       self.assertFalse(os.path.exists(path))
 
   def test_local_content_store(self):
@@ -61,7 +62,7 @@ class ContentStoreTest(unittest.TestCase):
   def _test_contentstore(self, content_store):
     with temporary_test_dir() as file_root:
       content = 'SOME CONTENT'
-      relpath = 'foo/bar/baz.txt'
+      relpath = 'foo/bar baz/qux quux.txt'  # Note spaces in path.
       full_path = os.path.join(file_root, relpath)
       os.makedirs(os.path.dirname(full_path))
       with open(full_path, 'w') as outfile:
@@ -82,7 +83,7 @@ class ContentStoreTest(unittest.TestCase):
       self.assertTrue(content_store.has(key))
 
       self.assertFalse(os.path.exists(full_path))
-      content_store.get(key, full_path)
+      content_store.get({key: [full_path]})
       self.assertTrue(os.path.exists(full_path))
       with open(full_path, 'r') as infile:
         s = infile.read()
