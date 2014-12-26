@@ -24,7 +24,15 @@ class ContentStore(object):
   Note that there is no delete functionality, by design.  Once a file's metadata has been
   committed, the content it references must live for all time, in case anyone inspects the repo
   at to that commit some time in the future.
+
+  # TODO: If the same content exists in multiple files with different file permissions, we don't currently
+  # capture the different permissions. On sync, all these files will have the same permissions (those of the first
+  # among them to be uploaded).
   """
+
+  @staticmethod
+  def _random_string():
+    return uuid.uuid4().hex
 
   @classmethod
   def sha(cls, path):
@@ -83,7 +91,7 @@ class ContentStore(object):
     :param key_to_target_paths: Map of key -> [list of target_paths for the content at that key]
     """
     def num_files_including_duplicates(k2t):
-      return reduce(lambda x, y: x + len(y), k2t.values(), 0)
+      return sum(len(t) for t in k2t.values())
 
     if not key_to_target_paths:
       return
@@ -106,7 +114,7 @@ class ContentStore(object):
     :param key_to_target_paths: Map of key -> [list of target_paths], where those args are as
            described in get() below.
     """
-    target_tmpdir = '/tmp/gitshed/{0}'.format(str(uuid.uuid4()))
+    target_tmpdir = '/tmp/gitshed/{0}'.format(self._random_string())
     safe_makedirs(target_tmpdir)
 
     content_store_paths = []
@@ -188,14 +196,14 @@ class ContentStore(object):
     """
     # This check pollutes the content_store. This shouldn't a problem, but we give these
     # files special path names so that detail-oriented admins can delete them if they choose.
-    content_store_path_suffix = self.content_store_path_from_key(str(uuid.uuid4()))
+    content_store_path_suffix = self.content_store_path_from_key(self._random_string())
     filename = os.path.basename(content_store_path_suffix)
     content_store_path = 'GITSHED_CLIENT_CHECK_DELETABLE/' + content_store_path_suffix
     if self.raw_has(content_store_path):
       raise GitShedError('Test key unexpectedly found.')
     with temporary_dir() as tmpdir:
       tmpfile = os.path.join(tmpdir, 'GITSHED_CLIENT_CHECK')
-      content = 'FAKE FILE CONTENT.'
+      content = b'FAKE FILE CONTENT.'
       with open(tmpfile, 'w') as outfile:
         outfile.write(content)
       self.raw_put(tmpfile, content_store_path)
