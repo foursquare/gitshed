@@ -114,28 +114,26 @@ class ContentStore(object):
     :param key_to_target_paths: Map of key -> [list of target_paths], where those args are as
            described in get() below.
     """
-    target_tmpdir = '/tmp/gitshed/{0}'.format(self._random_string())
-    safe_makedirs(target_tmpdir)
+    with temporary_dir() as target_tmpdir:
+      content_store_paths = []
+      for key in key_to_target_paths:
+        content_store_paths.append(self.content_store_path_from_key(key))
 
-    content_store_paths = []
-    for key in key_to_target_paths:
-      content_store_paths.append(self.content_store_path_from_key(key))
+      self.raw_get(content_store_paths, target_tmpdir)
 
-    self.raw_get(content_store_paths, target_tmpdir)
-
-    for key, target_paths in key_to_target_paths.items():
-      target_path_tmp = os.path.join(target_tmpdir, os.path.basename(self.content_store_path_from_key(key)))
-      sha = ContentStore.sha(target_path_tmp)
-      if key != sha:
-        raise GitShedError('Content sha mismatch for {0}! Expected {1} but got {2}.'.format(
-          target_path_tmp, key, sha))
-      # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
-      make_read_only(target_path_tmp)
-      for target_path in target_paths:
-        safe_makedirs(os.path.dirname(target_path))
-      for target_path in target_paths[:-1]:
-        shutil.copy(target_path_tmp, target_path)
-      shutil.move(target_path_tmp, target_paths[-1])
+      for key, target_paths in key_to_target_paths.items():
+        target_path_tmp = os.path.join(target_tmpdir, os.path.basename(self.content_store_path_from_key(key)))
+        sha = ContentStore.sha(target_path_tmp)
+        if key != sha:
+          raise GitShedError('Content sha mismatch for {0}! Expected {1} but got {2}.'.format(
+            target_path_tmp, key, sha))
+        # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
+        make_read_only(target_path_tmp)
+        for target_path in target_paths:
+          safe_makedirs(os.path.dirname(target_path))
+        for target_path in target_paths[:-1]:
+          shutil.copy(target_path_tmp, target_path)
+        shutil.move(target_path_tmp, target_paths[-1])
 
   def multi_put(self, src_paths):
     """Puts the content of multiple files into this content_store.
