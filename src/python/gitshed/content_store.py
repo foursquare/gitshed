@@ -24,7 +24,15 @@ class ContentStore(object):
   Note that there is no delete functionality, by design.  Once a file's metadata has been
   committed, the content it references must live for all time, in case anyone inspects the repo
   at to that commit some time in the future.
+
+  # TODO: If the same content exists in multiple files with different file permissions, we don't currently
+  # capture the different permissions. On sync, all these files will have the same permissions (those of the first
+  # among them to be uploaded).
   """
+
+  @staticmethod
+  def _random_string():
+    return uuid.uuid4().hex
 
   @classmethod
   def sha(cls, path):
@@ -48,11 +56,13 @@ class ContentStore(object):
         data = infile.read(4096)
     return hasher.hexdigest()
 
-  def __init__(self, get_concurrency=None, put_concurrency=None):
+  def __init__(self, chunk_size=20, get_concurrency=None, put_concurrency=None):
     """
+    :param chunk_size: Get/put in chunks of this size.
     :param get_concurrency: Size of threadpool for gets.
     :param put_concurrency: Size of threadpool for puts.
     """
+    self._chunk_size = chunk_size
     self._get_concurrency = get_concurrency or 12
     self._put_concurrency = put_concurrency or 4
 
@@ -73,50 +83,59 @@ class ContentStore(object):
     # multiple dirs if you expect a large number of files.)
     return 'content_store/{0}'.format(key)
 
-  def multi_get(self, key_target_path_pairs):
-    """Gets the content of multiple files from this content_store.
+  def get(self, key_to_target_paths):
+    """Gets file content from this content_store.
 
-    :param key_target_path_pairs: Iterable of (key, target_path) pairs, where those args are as
-           described in get() below.
+    In the case of multiple files with the same content, will only fetch the content once.
+
+    :param key_to_target_paths: Map of key -> [list of target_paths for the content at that key]
     """
-    if not key_target_path_pairs:
+    def num_files_including_duplicates(k2t):
+      return sum(len(t) for t in k2t.values())
+
+    if not key_to_target_paths:
       return
 
-    if len(key_target_path_pairs) == 1:
-      self.get(key_target_path_pairs[0][0], key_target_path_pairs[0][1])
-      return
-
-    n = len(key_target_path_pairs)  # Total number of files to get content for.
-    progress = Progress(n)
+    progress = Progress(num_files_including_duplicates(key_to_target_paths))
     progress.update_bar()
 
-    # The work is IO-bound, so we should be OK using threads.
-    # TODO(benjy): See if it's worth using a process pool instead.
     pool = ThreadPool(self._get_concurrency)
-    def do_get(arg):
-      self.get(arg[0], arg[1])
-      progress.increment()
-
-    pool.map(do_get, key_target_path_pairs)
+    def do_get(chunk):
+      self._get_chunk(chunk)
+      progress.increment(num_files_including_duplicates(chunk))
+    items = list(key_to_target_paths.items())
+    chunks = [dict(items[i:i+self._chunk_size]) for i in range(0, len(items), self._chunk_size)]
+    pool.map(do_get, chunks)
     print('')
 
-  def get(self, key, target_path):
-    """Gets the content of a file from this content store.
+  def _get_chunk(self, key_to_target_paths):
+    """Gets the content of some files from this content store.
 
-    :param key: Get the content with this key.
-    :param target_path: Write the content to this file.
+    :param key_to_target_paths: Map of key -> [list of target_paths], where those args are as
+           described in get() below.
     """
-    content_store_path = self.content_store_path_from_key(key)
-    target_path_tmp = target_path + '.tmp'
-    safe_makedirs(os.path.dirname(target_path_tmp))
-    self.raw_get(content_store_path, target_path_tmp)
-    sha = ContentStore.sha(target_path_tmp)
-    if key != sha:
-      raise GitShedError('Content sha mismatch for {0}! Expected {1} but got {2}.'.format(
-        target_path_tmp, key, sha))
-    # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
-    make_read_only(target_path_tmp)
-    shutil.move(target_path_tmp, target_path)
+    target_tmpdir = '/tmp/gitshed/{0}'.format(self._random_string())
+    safe_makedirs(target_tmpdir)
+
+    content_store_paths = []
+    for key in key_to_target_paths:
+      content_store_paths.append(self.content_store_path_from_key(key))
+
+    self.raw_get(content_store_paths, target_tmpdir)
+
+    for key, target_paths in key_to_target_paths.items():
+      target_path_tmp = os.path.join(target_tmpdir, os.path.basename(self.content_store_path_from_key(key)))
+      sha = ContentStore.sha(target_path_tmp)
+      if key != sha:
+        raise GitShedError('Content sha mismatch for {0}! Expected {1} but got {2}.'.format(
+          target_path_tmp, key, sha))
+      # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
+      make_read_only(target_path_tmp)
+      for target_path in target_paths:
+        safe_makedirs(os.path.dirname(target_path))
+      for target_path in target_paths[:-1]:
+        shutil.copy(target_path_tmp, target_path)
+      shutil.move(target_path_tmp, target_paths[-1])
 
   def multi_put(self, src_paths):
     """Puts the content of multiple files into this content_store.
@@ -177,36 +196,39 @@ class ContentStore(object):
     """
     # This check pollutes the content_store. This shouldn't a problem, but we give these
     # files special path names so that detail-oriented admins can delete them if they choose.
-    content_store_path = 'GITSHED_CLIENT_CHECK_DELETABLE/' + \
-                         self.content_store_path_from_key(str(uuid.uuid4()))
+    content_store_path_suffix = self.content_store_path_from_key(self._random_string())
+    filename = os.path.basename(content_store_path_suffix)
+    content_store_path = 'GITSHED_CLIENT_CHECK_DELETABLE/' + content_store_path_suffix
     if self.raw_has(content_store_path):
       raise GitShedError('Test key unexpectedly found.')
     with temporary_dir() as tmpdir:
       tmpfile = os.path.join(tmpdir, 'GITSHED_CLIENT_CHECK')
-      content = 'FAKE FILE CONTENT.'
+      content = b'FAKE FILE CONTENT.'
       with open(tmpfile, 'w') as outfile:
         outfile.write(content)
       self.raw_put(tmpfile, content_store_path)
       if not self.raw_has(content_store_path):
         raise GitShedError('Test key not found. Content store write failed?')
-      roundtripped_tmpfile = tmpfile + '.roundtripped'
-      self.raw_get(content_store_path, roundtripped_tmpfile)
-      with open(roundtripped_tmpfile, 'r') as infile:
+      roundtripped_tmpdir = os.path.join(tmpdir, 'roundtripped')
+      os.mkdir(roundtripped_tmpdir)
+      self.raw_get([content_store_path], roundtripped_tmpdir)
+      with open(os.path.join(roundtripped_tmpdir, filename), 'r') as infile:
         s = infile.read()
       if s != content:
         raise GitShedError('Mismatched content fetched from content_store.')
 
-  def raw_get(self, content_store_path, target_path_tmp):
-    """Gets the content of a file by its logical path.
+  def raw_get(self, content_store_paths, target_dir_tmp):
+    """Gets the content of files by their logical paths.
 
-    Writes to a temporary file which is verified against its key before being copied
-    to the true location. So implementations needn't worry about handling data corruption.
-    The file's directory is guaranteed to exist.
+    Writes to a temporary dir, which is guaranteed to exist.
+    Content is verified against its key before being copied to the true location. So
+    implementations needn't worry about handling data corruption.
 
     Subclasses must implement.
 
-    :param content_store_path: Get the content at this content store path.
-    :param target_path_tmp: Write the content to this temporary file.
+    :param content_store_paths: Get the contents at these content store paths.
+    :param target_dir_tmp: Write the content to this temporary directory, using the filenames
+                           in the content_store_paths (which must be unique).
     """
     raise NotImplementedError()
 

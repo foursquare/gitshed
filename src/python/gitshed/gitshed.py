@@ -3,6 +3,7 @@
 from __future__ import (nested_scopes, generators, division, absolute_import, with_statement,
                         print_function, unicode_literals)
 
+from collections import defaultdict
 import json
 import os
 import re
@@ -71,16 +72,16 @@ class GitShed(object):
     except KeyError as e:
       raise MissingConfigKeyError(e)
 
+    chunk_size = content_store_cfg.get('chunk_size', 20)
+
     if 'remote' in content_store_cfg:
       try:
         rcfg = content_store_cfg['remote']
         host = rcfg['host']
         root_path = rcfg['root_path']
-        root_url = rcfg['root_url']
-        timeout_secs = rcfg.get('timeout_secs', 5)
       except KeyError as e:
         raise MissingConfigKeyError(e)
-      content_store = RSyncedRemoteContentStore(host, root_path,
+      content_store = RSyncedRemoteContentStore(host, root_path, chunk_size,
                                                 concurrency.get('get'),
                                                 concurrency.get('put'))
     elif 'local' in content_store_cfg:
@@ -88,7 +89,7 @@ class GitShed(object):
         root = content_store_cfg['local']['root']
       except KeyError as e:
         raise MissingConfigKeyError(e)
-      content_store = LocalContentStore(root,
+      content_store = LocalContentStore(root, chunk_size,
                                         concurrency.get('get'),
                                         concurrency.get('put'))
     else:
@@ -170,12 +171,12 @@ class GitShed(object):
     :param paths: The files to sync.
     """
     unsynced_paths = [p for p in paths if os.path.islink(p) and not os.path.exists(p)]
-    args = []
+    key_to_target_paths = defaultdict(list)
     for path in unsynced_paths:
       target_path = self._get_gitshed_path(path)
       key = self._get_key_from_versioned_path(target_path)
-      args.append((key, target_path))
-    self._content_store.multi_get(args)
+      key_to_target_paths[key].append(target_path)
+    self._content_store.get(key_to_target_paths)
 
   def resync(self, paths):
     """Resyncs the specified files.

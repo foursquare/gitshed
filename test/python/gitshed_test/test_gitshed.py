@@ -39,7 +39,7 @@ class gitshedTest(unittest.TestCase):
       path = os.path.join(test_dir, 'file')
       with umask(0):
         with os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0777), 'w') as outfile:
-          outfile.write('FAKE CONTENT')
+          outfile.write(b'FAKE CONTENT')
 
         mode = os.stat(path)[stat.ST_MODE]
         self.assertTrue(mode & stat.S_IWUSR)
@@ -96,7 +96,7 @@ class gitshedTest(unittest.TestCase):
         def corrupt_content():
           os.chmod(bucket_relpath, 0644)
           with open(bucket_relpath, 'w') as fp:
-            fp.write('BAD CONTENT')
+            fp.write(b'BAD CONTENT')
 
         # Put the file under gitshed management. It should become a symlink.
         gitshed.manage([file_relpath])
@@ -149,7 +149,7 @@ class gitshedTest(unittest.TestCase):
 
         # Edit the file.
         with open(file_relpath, 'w') as fp:
-          fp.write('SOME OTHER CONTENT')
+          fp.write(b'SOME OTHER CONTENT')
 
         # Re-manage the file.
         gitshed.manage([file_relpath])

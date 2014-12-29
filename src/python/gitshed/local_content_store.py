@@ -15,12 +15,14 @@ class LocalContentStore(ContentStore):
 
   Useful for testing.
   """
-  def __init__(self, root, get_concurrency=None, put_concurrency=None):
-    super(LocalContentStore, self).__init__(get_concurrency, put_concurrency)
+  def __init__(self, root, chunk_size=20, get_concurrency=None, put_concurrency=None):
+    super(LocalContentStore, self).__init__(chunk_size, get_concurrency, put_concurrency)
     self._root = root
 
-  def raw_get(self, content_store_path, target_path_tmp):
-    shutil.copy(self._get_full_content_store_path(content_store_path), target_path_tmp)
+  def raw_get(self, content_store_paths, target_dir_tmp):
+    for path in content_store_paths:
+      target_path_tmp = os.path.join(target_dir_tmp, os.path.basename(path))
+      shutil.copy(self._get_full_content_store_path(path), target_path_tmp)
 
   def raw_put(self, src_path, content_store_path):
     self._safe_copy(src_path,  self._get_full_content_store_path(content_store_path))
