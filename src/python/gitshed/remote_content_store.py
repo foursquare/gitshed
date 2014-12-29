@@ -37,17 +37,17 @@ class RSyncedRemoteContentStore(ContentStore):
     retcode, stdout, stderr = run_cmd_str(cmd_str)
     return cmd_str, retcode, stdout, stderr
 
-  def raw_put(self, src_path, content_store_path):
+  def raw_put(self, src_paths, content_store_dir):
     # Note that rsync does an atomic rename at the end of a write, so we don't need
     # to emulate that functionality ourselves.
-    remote_path = os.path.join(self._remote_root_path, content_store_path)
-    remote_dir = os.path.dirname(remote_path)
-    cmd_str = """rsync -acvz --rsync-path="sudo mkdir -p {0} && sudo rsync" '{1}' {2}:{3}""".format(
-      remote_dir, src_path, self._host, remote_path)
+    remote_dir = os.path.join(self._remote_root_path, content_store_dir)
+    src_paths_str = ' '.join("'{0}'".format(src_path) for src_path in src_paths)
+    cmd_str = """rsync -acvz --rsync-path="sudo mkdir -p {0} && sudo rsync" {1} {2}:{3}""".format(
+      remote_dir, src_paths_str, self._host, remote_dir)
     retcode, stdout, stderr = run_cmd_str(cmd_str)
     if retcode:
       raise GitShedError('Failed to rsync {0} to {1}:{2}.\ncommand: {3}\nstdout: {4}\nstderr: {5}'.
-                         format(src_path, self._host, content_store_path, cmd_str, stdout, stderr))
+                         format(src_paths_str, self._host, content_store_dir, cmd_str, stdout, stderr))
 
 
   @staticmethod

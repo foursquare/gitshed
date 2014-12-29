@@ -96,7 +96,7 @@ class ContentStoreTest(unittest.TestCase):
       key = ContentStore.sha(fullpath)
 
       self.assertFalse(content_store.has(key))
-      content_store.put(fullpath)
+      content_store.put([fullpath])
       self.assertTrue(content_store.has(key))
 
       self.assertTrue(os.path.exists(fullpath))
@@ -147,10 +147,9 @@ class ContentStoreTest(unittest.TestCase):
         fullpath2mode[fullpath] = current_mode
         key2fullpaths[key].append(fullpath)
 
+      content_store.put(fullpath2key.keys())
+
       for fullpath, key in fullpath2key.items():
-        # TODO: Switch to 'multi_put' here after that's re-implemented to correctly handle
-        # multiple files with the same content.
-        content_store.put(fullpath)
         self.assertTrue(content_store.has(key))
         self.assertTrue(os.path.exists(fullpath))
         os.remove(fullpath)

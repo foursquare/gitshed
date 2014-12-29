@@ -217,7 +217,7 @@ class GitShed(object):
         relpaths.append(relpath)
 
     # Upload everything to the content store.
-    keys = self._content_store.multi_put(relpaths)
+    keys = self._content_store.put(relpaths)
 
     # Move the files into the shed.
     for key, relpath in zip(keys, relpaths):
