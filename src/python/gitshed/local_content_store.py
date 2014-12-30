@@ -24,8 +24,10 @@ class LocalContentStore(ContentStore):
       target_path_tmp = os.path.join(target_dir_tmp, os.path.basename(path))
       shutil.copy(self._get_full_content_store_path(path), target_path_tmp)
 
-  def raw_put(self, src_path, content_store_path):
-    self._safe_copy(src_path,  self._get_full_content_store_path(content_store_path))
+  def raw_put(self, src_paths, content_store_dir):
+    for src_path in src_paths:
+      content_store_path = '{0}/{1}'.format(content_store_dir, os.path.basename(src_path))
+      self._safe_copy(src_path,  self._get_full_content_store_path(content_store_path))
 
   def raw_has(self, content_store_path):
     return os.path.isfile(self._get_full_content_store_path(content_store_path))

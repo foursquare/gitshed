@@ -3,6 +3,7 @@
 from __future__ import (nested_scopes, generators, division, absolute_import, with_statement,
                         print_function, unicode_literals)
 
+from collections import defaultdict
 import hashlib
 from multiprocessing.pool import ThreadPool
 import os
@@ -135,7 +136,7 @@ class ContentStore(object):
           shutil.copy(target_path_tmp, target_path)
         shutil.move(target_path_tmp, target_paths[-1])
 
-  def multi_put(self, src_paths):
+  def put(self, src_paths):
     """Puts the content of multiple files into this content_store.
 
     :param src_paths: Iterable source paths to put into this content store.
@@ -144,37 +145,56 @@ class ContentStore(object):
     if not src_paths:
       return []
 
-    # No point in spawning threads for just one file.
-    if len(src_paths) == 1:
-      return [self.put(src_paths[0])]
+    ret = []
+
+    # We bucket src_paths by the content store directory they map to, as we can put multiple
+    # contents to a single directory in a single call. Note that currently all content store
+    # entries are in a single directory (see content_store_path_from_key above), so this step is
+    # unneeded, but we do it anyway for futureproofing.
+    # "work" here is a list of pairs of (src_path, content store basename).
+    cs_dir_to_work = defaultdict(list)
+
+    # If multiple files have the same content we don't need to put them multiple times.
+    # However we do count how many user files a single content store path stands in for in this
+    # put operation, so we can show users a progress bar with the numbers they expect.
+    cardinality = defaultdict(lambda: 0)  # Map of content store path -> number of user files.
+
+    for src_path in src_paths:
+      key = ContentStore.sha(src_path)
+      ret.append(key)
+      cs_path = self.content_store_path_from_key(key)
+      if cs_path not in cardinality:
+        cs_dir, _, cs_basename = cs_path.rpartition('/')
+        cs_dir_to_work[cs_dir].append((src_path, cs_basename))
+      cardinality[cs_path] += 1
 
     n = len(src_paths)  # Total number of files to put.
     progress = Progress(n)
     progress.update_bar()
 
-    # The work is IO-bound, so we should be OK using threads. Each thread
-    # spawns rsync processes anyway.
-    # TODO(benjy): See if it's worth using a process pool instead.
     pool = ThreadPool(self._put_concurrency)
-    def do_put(src_path):
-      ret = self.put(src_path)
-      progress.increment()
-      return ret
+    def do_put(chunk):
+      cs_dir, work = chunk
+      n = sum(cardinality['{0}/{1}'.format(cs_dir, cs_basename)] for (_, cs_basename) in work)
+      self._put_chunk(cs_dir, work)
+      progress.increment(n)
 
-    ret = pool.map(do_put, src_paths)
+    chunks = []
+    for cs_dir, work in cs_dir_to_work.items():
+      chunks.extend((cs_dir, work[i:i+self._chunk_size]) for i in range(0, len(work), self._chunk_size))
+
+    pool.map(do_put, chunks)
     print('')
     return ret
 
-  def put(self, src_path):
-    """Puts the content of a file into this content store.
-
-    :param src_path: Read the content from this file.
-    :returns The key for the content.
-    """
-    key = ContentStore.sha(src_path)
-    content_store_path = self.content_store_path_from_key(key)
-    self.raw_put(src_path, content_store_path)
-    return key
+  def _put_chunk(self, cs_dir, work):
+    with temporary_dir() as tmpdir:
+      tmp_src_paths = []
+      for src_path, cs_basename in work:
+        tmp_src_path = os.path.join(tmpdir, cs_basename)
+        os.link(src_path, tmp_src_path)
+        tmp_src_paths.append(tmp_src_path)
+      self.raw_put(tmp_src_paths, cs_dir)
 
   def has(self, key):
     """Checks for the existence of content in this content store.
@@ -194,23 +214,23 @@ class ContentStore(object):
     """
     # This check pollutes the content_store. This shouldn't a problem, but we give these
     # files special path names so that detail-oriented admins can delete them if they choose.
-    content_store_path_suffix = self.content_store_path_from_key(self._random_string())
-    filename = os.path.basename(content_store_path_suffix)
-    content_store_path = 'GITSHED_CLIENT_CHECK_DELETABLE/' + content_store_path_suffix
+    content_store_dir_suffix = self.content_store_path_from_key(self._random_string())
+    content_store_dir = 'GITSHED_CLIENT_CHECK_DELETABLE/{0}'.format(content_store_dir_suffix)
+    content_store_path = '{0}/GITSHED_CLIENT_CHECK_KEY'.format(content_store_dir)
     if self.raw_has(content_store_path):
       raise GitShedError('Test key unexpectedly found.')
     with temporary_dir() as tmpdir:
-      tmpfile = os.path.join(tmpdir, 'GITSHED_CLIENT_CHECK')
+      tmpfile = os.path.join(tmpdir, 'GITSHED_CLIENT_CHECK_KEY')
       content = b'FAKE FILE CONTENT.'
       with open(tmpfile, 'w') as outfile:
         outfile.write(content)
-      self.raw_put(tmpfile, content_store_path)
+      self.raw_put([tmpfile], content_store_dir)
       if not self.raw_has(content_store_path):
         raise GitShedError('Test key not found. Content store write failed?')
       roundtripped_tmpdir = os.path.join(tmpdir, 'roundtripped')
       os.mkdir(roundtripped_tmpdir)
       self.raw_get([content_store_path], roundtripped_tmpdir)
-      with open(os.path.join(roundtripped_tmpdir, filename), 'r') as infile:
+      with open(os.path.join(roundtripped_tmpdir, 'GITSHED_CLIENT_CHECK_KEY'), 'r') as infile:
         s = infile.read()
       if s != content:
         raise GitShedError('Mismatched content fetched from content_store.')
@@ -230,13 +250,14 @@ class ContentStore(object):
     """
     raise NotImplementedError()
 
-  def raw_put(self, src_path, content_store_path):
-    """Puts the content of a file into a location specified by a logical path.
+  def raw_put(self, src_paths, content_store_dir):
+    """Puts the contents of files into the content store.
 
     Subclasses must implement.
 
-    :param src_path: Read the content from this file.
-    :param content_store_path: Put the content at this content store path.
+    :param src_paths: Files to put into the content store.
+    :param content_store_dir: Put the content into this directory in the content store, using
+                              the basename of each file as its content's name in that directory.
     """
     raise NotImplementedError()
 
