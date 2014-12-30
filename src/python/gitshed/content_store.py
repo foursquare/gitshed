@@ -7,12 +7,13 @@ from collections import defaultdict
 import hashlib
 from multiprocessing.pool import ThreadPool
 import os
+import re
 import shutil
 import uuid
 
 from gitshed.error import GitShedError
 from gitshed.progress import Progress
-from gitshed.util import safe_makedirs, temporary_dir, make_read_only
+from gitshed.util import make_mode_read_only, make_read_only, safe_makedirs, temporary_dir
 
 
 class ContentStore(object):
@@ -22,13 +23,11 @@ class ContentStore(object):
   the content) and internally by a logical path. This path may or may not correspond
   to a filesystem or URL path, depending on the implementation.
 
+  A ContentStore implementation must preserve file permissions.
+
   Note that there is no delete functionality, by design.  Once a file's metadata has been
   committed, the content it references must live for all time, in case anyone inspects the repo
   at to that commit some time in the future.
-
-  # TODO: If the same content exists in multiple files with different file permissions, we don't currently
-  # capture the different permissions. On sync, all these files will have the same permissions (those of the first
-  # among them to be uploaded).
   """
 
   @staticmethod
@@ -40,6 +39,7 @@ class ContentStore(object):
     """Computes a file's git sha.
 
     :param path: The file to fingerprint.
+    :returns: A string containing 40 hex digits.
     """
     # Note that git computes its content fingerprints as sha1('blob ' + filesize + '\0' + data),
     # so we do the same. It's not crucial to use git's object hash as our fingerprint, but it
@@ -56,6 +56,48 @@ class ContentStore(object):
         hasher.update(data)
         data = infile.read(4096)
     return hasher.hexdigest()
+
+  @classmethod
+  def mode(cls, path):
+    """Computes a file's mode.
+
+    Returns just the permissions digits, not the ones that indicate device type and so on.
+    Note that the mode ignores the read bit, as files managed by gitshed are always read-only.
+
+    :param path: The file to compute a mode for.
+    :returns: A 4-digit octal string (plus a leading 0).
+    """
+    # Files managed by gitshed are always read-only, so we ignore the write bits.
+    mode = make_mode_read_only(os.stat(path).st_mode)
+    # We want just the last 4 digits (plus the leading '0' to indicate octal).
+    return ('0000' + oct(mode))[-5:]
+
+  @classmethod
+  def key(cls, path):
+    """Computes a file's key.
+
+    The key is a combination of the file's content fingerprint and its access permissions.
+    This allows us to handle two different files with different permissions but the same sha.
+    """
+    sha = cls.sha(path)
+    mode = cls.mode(path)
+    return '{0}_{1}'.format(sha, mode)
+
+  @classmethod
+  def sha_from_key(cls, key):
+    """Returns the sha part of a key."""
+    return key[0:40]
+
+  @classmethod
+  def mode_from_key(cls, key):
+    """Returns the access permissions part of a key, as an octal string."""
+    return key[41:]
+
+  _KEY_RE = re.compile(r'^[0-9a-f]{40}_0[0-7]{4}$')  # Matches exactly (40 hex digits)_0(4 octal digits).
+
+  @classmethod
+  def is_valid_key(cls, key):
+    return cls._KEY_RE.match(key)
 
   def __init__(self, chunk_size=20, get_concurrency=None, put_concurrency=None):
     """
@@ -124,12 +166,18 @@ class ContentStore(object):
 
       for key, target_paths in key_to_target_paths.items():
         target_path_tmp = os.path.join(target_tmpdir, os.path.basename(self.content_store_path_from_key(key)))
-        sha = ContentStore.sha(target_path_tmp)
-        if key != sha:
+        actual_sha = ContentStore.sha(target_path_tmp)
+        key_sha = self.sha_from_key(key)
+        if key_sha != actual_sha:
           raise GitShedError('Content sha mismatch for {0}! Expected {1} but got {2}.'.format(
-            target_path_tmp, key, sha))
-        # Must not write through the symlink: those changes won't be seen by git (let alone git shed).
-        make_read_only(target_path_tmp)
+            target_path_tmp, key, actual_sha))
+        actual_mode = ContentStore.mode(target_path_tmp)
+        key_mode = self.mode_from_key(key)
+
+        if key_mode != actual_mode:
+          raise GitShedError('File permission mismatch for {0}! Expected {1} but got {2}.'.format(
+            target_path_tmp, key_mode, actual_mode))
+
         for target_path in target_paths:
           safe_makedirs(os.path.dirname(target_path))
         for target_path in target_paths[:-1]:
@@ -160,7 +208,7 @@ class ContentStore(object):
     cardinality = defaultdict(lambda: 0)  # Map of content store path -> number of user files.
 
     for src_path in src_paths:
-      key = ContentStore.sha(src_path)
+      key = ContentStore.key(src_path)
       ret.append(key)
       cs_path = self.content_store_path_from_key(key)
       if cs_path not in cardinality:
@@ -193,6 +241,8 @@ class ContentStore(object):
       for src_path, cs_basename in work:
         tmp_src_path = os.path.join(tmpdir, cs_basename)
         os.link(src_path, tmp_src_path)
+        # Files in gitshed must be read-only.
+        make_read_only(tmp_src_path)
         tmp_src_paths.append(tmp_src_path)
       self.raw_put(tmp_src_paths, cs_dir)
 

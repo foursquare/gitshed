@@ -25,13 +25,13 @@ def umask(new_umask):
 class gitshedTest(unittest.TestCase):
 
   def _assert_is_read_only(self, path):
-    mode = os.stat(path)[stat.ST_MODE]
+    mode = os.stat(path).st_mode
     self.assertFalse(mode & stat.S_IWUSR)
     self.assertFalse(mode & stat.S_IWGRP)
     self.assertFalse(mode & stat.S_IWOTH)
 
   def _assert_is_user_writeable(self, path):
-    mode = os.stat(path)[stat.ST_MODE]
+    mode = os.stat(path).st_mode
     self.assertTrue(mode & stat.S_IWUSR)
 
   def test_make_read_only(self):
@@ -41,22 +41,13 @@ class gitshedTest(unittest.TestCase):
         with os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0777), 'w') as outfile:
           outfile.write(b'FAKE CONTENT')
 
-        mode = os.stat(path)[stat.ST_MODE]
+        mode = os.stat(path).st_mode
         self.assertTrue(mode & stat.S_IWUSR)
         self.assertTrue(mode & stat.S_IWGRP)
         self.assertTrue(mode & stat.S_IWOTH)
 
         make_read_only(path)
         self._assert_is_read_only(path)
-
-  def test_is_valid_key(self):
-    self.assertFalse(GitShed.is_valid_key(''))
-    self.assertFalse(GitShed.is_valid_key('0'))
-    self.assertFalse(GitShed.is_valid_key('0123456789abcdef0123456789abcdef0123456'))
-    self.assertTrue( GitShed.is_valid_key('0123456789abcdef0123456789abcdef01234567'))
-    self.assertFalse(GitShed.is_valid_key('0123456789abcdef0123456789abcdef012345678'))
-    self.assertFalse(GitShed.is_valid_key('0123456789abcdefg0123456789abcdef012345'))
-    self.assertTrue( GitShed.is_valid_key('8c61f083227d5957c825defd97363c77d2122746'))
 
   def test_generate_find_command(self):
     with temporary_git_repo({}) as repo:
@@ -89,8 +80,8 @@ class gitshedTest(unittest.TestCase):
 
         assert_status(0, 0)
 
-        sha = ContentStore.sha(file_relpath)
-        bucket_relpath = os.path.join('.gitshed', 'files', 'foo', 'bar', '{0}.baz'.format(sha))
+        key = ContentStore.key(file_relpath)
+        bucket_relpath = os.path.join('.gitshed', 'files', 'foo', 'bar', '{0}.baz'.format(key))
         self.assertFalse(os.path.isfile(bucket_relpath))
 
         def corrupt_content():
@@ -153,9 +144,9 @@ class gitshedTest(unittest.TestCase):
 
         # Re-manage the file.
         gitshed.manage([file_relpath])
-        new_sha = ContentStore.sha(file_relpath)
-        self.assertNotEqual(new_sha, sha)
-        new_bucket_relpath = os.path.join('.gitshed', 'files', 'foo', 'bar', '{0}.baz'.format(new_sha))
+        new_key = ContentStore.key(file_relpath)
+        self.assertNotEqual(new_key, key)
+        new_bucket_relpath = os.path.join('.gitshed', 'files', 'foo', 'bar', '{0}.baz'.format(new_key))
         self.assertTrue(os.path.islink(file_relpath))
         self.assertTrue(os.path.isfile(new_bucket_relpath))
         new_link_abspath = os.path.abspath(os.path.join(os.path.dirname(file_relpath),
