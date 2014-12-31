@@ -5,7 +5,6 @@ from __future__ import (nested_scopes, generators, division, absolute_import, wi
 
 from collections import defaultdict
 import os
-import stat
 import unittest
 
 import pytest
@@ -27,6 +26,22 @@ class ContentStoreTest(unittest.TestCase):
       _, expected_sha, _ = run_cmd_str('git hash-object foo.txt')
       # Verify that our computed sha is the same as the one that git computes.
       self.assertEqual(expected_sha.strip(), ContentStore.sha('foo.txt'))
+
+  def test_is_valid_key(self):
+    self.assertFalse(ContentStore.is_valid_key(''))
+    self.assertFalse(ContentStore.is_valid_key('0'))
+    self.assertFalse(ContentStore.is_valid_key('01777'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef0123456'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef01234567'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef012345678'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdefg0123456789abcdef012345'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef0123456_01755'))
+    self.assertTrue( ContentStore.is_valid_key('0123456789abcdef0123456789abcdef01234567_01755'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef012345678_01755'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef01234567_0755'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef01234567_001755'))
+    self.assertFalse(ContentStore.is_valid_key('0123456789abcdef0123456789abcdef01234567_11755'))
+    self.assertTrue( ContentStore.is_valid_key('8c61f083227d5957c825defd97363c77d2122746_00644'))
 
 
   def test_content_store_path_from_key(self):
@@ -91,9 +106,9 @@ class ContentStoreTest(unittest.TestCase):
 
       # # Make file executable.
       os.chmod(fullpath, 0755)
-      old_mode = os.stat(fullpath)[stat.ST_MODE]
+      old_mode = os.stat(fullpath).st_mode
 
-      key = ContentStore.sha(fullpath)
+      key = ContentStore.key(fullpath)
 
       self.assertFalse(content_store.has(key))
       content_store.put([fullpath])
@@ -109,7 +124,7 @@ class ContentStoreTest(unittest.TestCase):
       with open(fullpath, 'r') as infile:
         s = infile.read()
       self.assertEqual(content, s)
-      new_mode = os.stat(fullpath)[stat.ST_MODE]
+      new_mode = os.stat(fullpath).st_mode
 
       # Verify that file is still executable, but is read-only.
       self.assertEqual(old_mode & ~0222, new_mode)
@@ -118,9 +133,9 @@ class ContentStoreTest(unittest.TestCase):
     with temporary_test_dir() as file_root:
       relpath2content = {
         # Note spaces in paths.
-        # Note that we can't currently handle different file permissions on the same content.
         'foo/bar baz1/qux quux.txt': (b'CONTENT1', 0755),
-        'foo/bar baz2/qux quux.txt': (b'CONTENT1', 0755),  # Note: same content as previous file.
+        'foo/bar baz2/qux quux.txt': (b'CONTENT1', 0755),  # Same content as previous file.
+        'foo/bar baz3/qux quux.txt': (b'CONTENT1', 0500),  # Same content as previous file, but different mode.
         'foo/bar baz/qux quux_A.txt': (b'CONTENT2', 0644),
         'foo/bar baz/qux quux_B.txt': (b'CONTENT3', 0644),
         'foo/bar baz1/qux quux_42.txt': (b'CONTENT4', 0400),
@@ -139,8 +154,8 @@ class ContentStoreTest(unittest.TestCase):
           outfile.write(content)
         # Make file executable.
         os.chmod(fullpath, mode)
-        current_mode = os.stat(fullpath)[stat.ST_MODE]
-        key = ContentStore.sha(fullpath)
+        current_mode = os.stat(fullpath).st_mode
+        key = ContentStore.key(fullpath)
         self.assertFalse(content_store.has(key))
         fullpath2content[fullpath] = content
         fullpath2key[fullpath] = key
@@ -163,7 +178,7 @@ class ContentStoreTest(unittest.TestCase):
         with open(fullpath, 'r') as infile:
           s = infile.read()
         self.assertEqual(content, s)
-        new_mode = os.stat(fullpath)[stat.ST_MODE]
+        new_mode = os.stat(fullpath).st_mode
         expected_mode = fullpath2mode[fullpath]
         # Verify that the file is read-only, but the mode otherwise unchanged (e.g., is still executable).
         self.assertEqual(expected_mode & ~0222, new_mode)

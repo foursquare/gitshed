@@ -8,7 +8,6 @@ import errno
 import os
 import shlex
 import shutil
-import stat
 import subprocess
 import tempfile
 
@@ -40,12 +39,15 @@ def safe_rmtree(path):
   shutil.rmtree(path, True)
 
 
+def make_mode_read_only(mode):
+  return mode & ~0222
+
 def make_read_only(path):
-  mode = os.stat(path)[stat.ST_MODE]
-  os.chmod(path, mode & ~0222)
+  mode = os.stat(path).st_mode
+  os.chmod(path, make_mode_read_only(mode))
 
 def make_user_writeable(path):
-  mode = os.stat(path)[stat.ST_MODE]
+  mode = os.stat(path).st_mode
   os.chmod(path, mode | 0200)
 
 

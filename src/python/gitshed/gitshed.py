@@ -6,7 +6,6 @@ from __future__ import (nested_scopes, generators, division, absolute_import, wi
 from collections import defaultdict
 import json
 import os
-import re
 import shutil
 import sys
 from gitshed.content_store import ContentStore
@@ -224,11 +223,15 @@ class GitShed(object):
       versioned_relpath = self._create_versioned_path(relpath, key)
       target_abspath = os.path.abspath(os.path.join(self._shed_relpath, versioned_relpath))
       if os.path.exists(target_abspath):
-        sha = ContentStore.sha(target_abspath)
-        if key != sha:
-          raise GitShedError("Shed path {0} already exists and doesn't match content hash "
+        existing_key = ContentStore.key(target_abspath)
+        if ContentStore.sha_from_key(key) != ContentStore.sha_from_key(existing_key):
+          raise GitShedError("Shed path {0} already exists and doesn't match the content hash "
                              "of {1}. Delete it manually, but only if you're sure it's "
                              "safe to do so.".format(target_abspath, relpath))
+        elif ContentStore.mode_from_key(key) != ContentStore.mode_from_key(existing_key):
+          raise GitShedError("Shed path {0} already exists and has different permissions than "
+                             "{1}. Delete it manually, but only if you're sure it's safe to "
+                             "do so".format(target_abspath, relpath))
       else:
         safe_makedirs(os.path.dirname(target_abspath))
         shutil.move(relpath, target_abspath)
@@ -240,7 +243,7 @@ class GitShed(object):
       os.symlink(rel_link, relpath)
 
   def unmanage(self, paths):
-    """Removes file from management by git shed.
+    """Removes files from management by git shed.
 
     For each file:
       - Syncs it into the shed if necessary.
@@ -280,12 +283,6 @@ class GitShed(object):
         outfile.write('\n{0}\n'.format(relpath))
     self._content_store.verify_setup()
 
-  _KEY_RE = re.compile(r'^[0-9a-f]{40}$')  # Matches exactly 40 hex digits.
-
-  @classmethod
-  def is_valid_key(cls, key):
-    return cls._KEY_RE.match(key)
-
   def _get_gitshed_path(self, path):
     """If path is a symlink into the gitshed, returns the path it links to, relative to the repo root.
 
@@ -305,7 +302,7 @@ class GitShed(object):
     :param path: The unversioned path.
     :param key: The key to add to the path.
     """
-    if not self.is_valid_key(key):
+    if not ContentStore.is_valid_key(key):
       raise GitShedError('Invalid version string: {0}'.format(key))
     # We prefix the file name with the key, rather than suffixing it, so that the file extension
     # is preserved. This prevents programs that interpret the extension from getting confused.
@@ -318,7 +315,7 @@ class GitShed(object):
     :param path: The versioned path.
     """
     key, sep, _ = os.path.basename(path).partition('.')
-    if not sep or not self.is_valid_key(key):
+    if not sep or not ContentStore.is_valid_key(key):
       raise GitShedError('No version in path {0}'.format(path))
     return key
 
