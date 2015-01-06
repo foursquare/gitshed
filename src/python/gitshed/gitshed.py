@@ -232,6 +232,7 @@ class GitShed(object):
           raise GitShedError("Shed path {0} already exists and has different permissions than "
                              "{1}. Delete it manually, but only if you're sure it's safe to "
                              "do so".format(target_abspath, relpath))
+        os.unlink(relpath)  # So we can replace it with a symlink below.
       else:
         safe_makedirs(os.path.dirname(target_abspath))
         shutil.move(relpath, target_abspath)
