@@ -33,6 +33,12 @@ the git repo.
 Gitshed is similar in spirit to [git-annex](https://git-annex.branchable.com/), but simpler and 
 more tailored to the author's requirements.
 
+The name "gitshed" is a triple pun:
+
+- It helps you "shed" binary files from your git repo.
+- The files live outside the repo, in a "shed".
+- The project was named in a bikeshedding session.
+
 
 Concepts
 ========
@@ -49,20 +55,31 @@ Gitshed can be in one of two states: *unsynced* or *synced*.
 - An unsynced file has no content in the shed, and is represented by a broken symlink.
 - A synced file has content in the shed, and is represented by a symlink to that content.
 
-Syncing a file pulls the content in from the content store into the shed, healing the symlink.
+*Syncing* a file pulls the content in from the content store into the shed, healing the symlink.
 
 
 Usage
 =====
 
-Gitshed has several subcommands:
+Gitshed is typically installed as a custom git command, and invoked thus: `git shed <subcommand> <args>`.
+It may also be invoked directly, but for the rest of this documentation we'll assume the former invocation style.
+
+Gitshed has several subcommands.  Some of these take file paths as arguments, and these can be specified
+in two ways:
+
+- As a list of globs: `git shed manage data/*.bin archives/*.jar`
+- As a file containing paths, one per line: 
+  `git shed manage -f path/to/argfile` or
+  `git shed manage --argfile=path/to/argfile`
+  
+Run `git shed` or `git shed --help` to get help. Run `git shed <subcommand> --help` to get help for that subcommand.
 
 manage
 ------
 
 Places files under gitshed's management.
 
-`git shed manage <file_glob> <file_glob>...`
+`git shed manage <file args>`
 
 Each file is uploaded to the content store, moved into the shed and replaced by a symlink.
 
@@ -71,14 +88,29 @@ sync
 
 Syncs files into the shed.
 
-`git shed sync <file_glob> <file_glob>...`
+`git shed sync <file args>`
 
-The contents of each file (that's under gitshed's management) is pulled from the content store
-to the symlinked location in the shed.
+The contents of all managed but unsynced files are pulled from the content store
+to their symlinked locations in the shed.
 
-To symlink every managed file in the repo, omit the file specs:
+To sync every managed file in the repo, omit the file arguments:
 
 `git shed sync`
+
+
+resync
+------
+
+Re-download managed files into the shed.
+
+`git shed resync <file args>`
+
+The contents of all managed files, even those already synced, are pulled from the content store
+to their symlinked location in the shed.
+
+To resync every managed file in the repo, omit the file arguments:
+
+`git shed resync`
 
 status
 ------
@@ -103,6 +135,20 @@ Lists all unsynced files.
 `git shed unsynced`
 
 
+unmanage
+--------
+
+Remove files from gitshed's management.
+
+`git shed unmanage <file args>`
+
+Symlinks are overwritten with the content they symlinked to.
+
+To unmanage all managed files in the repo, omit the file arguments:
+
+`git shed unmanage`
+
+
 setup
 -----
 
@@ -125,8 +171,8 @@ When adding a new file to the shed, typical workflow is:
 After pulling, other contributors will have a broken symlink at `path/to/file` and will 
 need to `git shed sync` to heal it and have access to the file content. 
 
-You may want to use git hooks to have `git shed sync` called automatically after pulls/merges.
-
+You may want to use git hooks to have `git shed sync` called automatically when the workspace changes.
+The relevant hooks are: `post-applypatch`, `post-checkout`, `post-commit`, `post-merge` and `post-rewrite`.
 
 
 Installation
@@ -146,43 +192,40 @@ To build gitshed:
 
 This will create `dist/gitshed.pex`. 
 
-You can run this file directly, but it's convenient to install it as a custom git command 
-called 'shed'. You can do so either using a wrapper script  named `git-shed` on your `PATH`, 
-or using `git config alias`. 
-
-The remainder of this file will asssume that gitshed is installed as a custom git command.
+You can run this file directly, but, as mentioned above, it's convenient to install it as a custom git command called 
+'shed'. You can do so either using a wrapper script  named `git-shed` on your `PATH`,  or using `git config alias`. 
 
 
 Setup
 -----
 The only setup steps are:
 
-1. Add `.gitshed/files` to your `.gitignore` file.
+1. Add `<repo root>/.gitshed/files` to your `.gitignore` file.
 2. Create a configuration file.
+
 
 Configuration
 -------------
 
-Gitshed's data lives under `<repo root>/.gitshed`.
-
-Config lives in the file `.gitshed/config.json`. For example, to set up a remote content store:
+Config lives in the file `<repo root>/.gitshed/config.json`. For example, to set up a remote content store:
 
     {
       ...
       "content_store": {
+        "chunk_size": 20,
         "remote": {
           "host": "mycontentstore",
           "root_path": "/data/gitshed/myrepo/",
-          "root_url": "http://mycontentstore/gitshed/myrepo/",
-          "timeout_secs": 10
         }
       }
       ...
     }
     
-This will fetch content using HTTP and write it using rsync. This is currently the only remote
-content store implementation available, but it is very easy to write new ones (e.g., a RESTful 
-content store that uploads via a PUT request). Feel free to contribute one.
+This will upload and download using rsync, to/from the specified root path on the specified host. 
+Each invocation of rsync will read/write chunk_size files. 
+
+This is currently the only remote content store implementation available,  but it would be very straightforward to 
+write new ones (e.g., a RESTful content store). Feel free to contribute one.
     
     {
       ...
@@ -196,14 +239,14 @@ which can help performance.
     {
       ...
       "concurrency": {
-        "get": 12,
-        "put": 6
+        "get": 6,
+        "put": 4
       }
       ...
     }
     
-This will cause git shed to use 12 threads for downloading content while syncing and 
-6 threads when uploading content while putting files under management.
+This will cause git shed to use 6 threads for downloading content while syncing and 
+4 threads when uploading content while putting files under management.
 
 There are example config files in this repo:
 
