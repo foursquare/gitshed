@@ -1,10 +1,9 @@
 {
+  "chunk_size": 20,
   "content_store": {
     "remote": {
       "host": "mycontentstore",
       "root_path": "/data/gitshed/myrepo",
-      "root_url": "http://mycontentstore/gitshed/myrepo/",
-      "timeout_secs": 10
     }
   },
 

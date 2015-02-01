@@ -8,7 +8,7 @@
   "exclude": [".pants.d", ".pants.bootstrap"],
 
   "concurrency": {
-    "get": 12,
-    "put": 6
+    "get": 4,
+    "put": 4
   }
 }
